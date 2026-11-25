@@ -13,6 +13,7 @@ import {
   issueAdminBearerToken,
   requireAdminAuth,
   revokeAdminBearerToken,
+  updateClaimedAdminPassword,
   verifyAdminBearerToken,
   verifyAdminCredential,
 } from './server/adminAuth';
@@ -62,7 +63,7 @@ async function startServer() {
           scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
           styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
           fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
-          imgSrc: ["'self'", 'data:', 'blob:'],
+          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
           connectSrc: ["'self'", 'ws:', 'wss:'],
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
@@ -296,6 +297,22 @@ async function startServer() {
     res.json({ signedOut: true });
   });
 
+  app.post('/api/admin/auth/change-password', requireAdminAuth, async (req, res) => {
+    const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      res.status(400).json({ error: 'New password must be between 8 and 128 characters.' });
+      return;
+    }
+    const updated = await updateClaimedAdminPassword(newPassword);
+    if (!updated) {
+      res.status(409).json({
+        error: 'Password is managed by the ADMIN_PASSCODE secret in Settings -> Secrets.',
+      });
+      return;
+    }
+    res.json({ updated: true });
+  });
+
   app.get('/api/admin/overview', requireAdminAuth, (_req, res) => {
     const overview = newsEngine.getAdminOverview(newsletterSubscribers.size);
     const siteConfig = newsEngine.getSiteConfig();
@@ -372,6 +389,32 @@ async function startServer() {
       }))
       .sort((a, b) => new Date(b.subscribedAt).getTime() - new Date(a.subscribedAt).getTime());
     res.json({ subscribers });
+  });
+
+  app.post('/api/admin/subscribers', requireAdminAuth, (req, res) => {
+    const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const rawLang = String(req.body?.lang ?? 'en').toLowerCase() as Language;
+    const lang: Language = VALID_LANGS.has(rawLang) ? rawLang : 'en';
+
+    if (!rawEmail || rawEmail.length > 254 || !EMAIL_REGEX.test(rawEmail)) {
+      res.status(400).json({ error: 'Please enter a valid subscriber email address.' });
+      return;
+    }
+
+    const existed = newsletterSubscribers.has(rawEmail);
+    if (!existed) {
+      newsletterSubscribers.set(rawEmail, {
+        lang,
+        sessionIdHash: 'admin_added',
+        subscribedAt: new Date().toISOString(),
+      });
+    }
+
+    res.status(existed ? 200 : 201).json({
+      added: !existed,
+      alreadySubscribed: existed,
+      email: rawEmail,
+    });
   });
 
   app.delete('/api/admin/subscribers', requireAdminAuth, (req, res) => {

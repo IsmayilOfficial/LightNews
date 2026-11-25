@@ -38,6 +38,8 @@ export default function App() {
   const [sessionToken, setSessionToken] = useState<string>('');
   const [csrfToken, setCsrfToken] = useState<string>('');
   const sessionTokenRef = useRef<string>('');
+  const csrfTokenRef = useRef<string>('');
+  const userSelectedLangRef = useRef<boolean>(false);
   const sessionPromiseRef = useRef<Promise<{ sessionToken: string; csrfToken: string } | null> | null>(null);
   const [articles, setArticles] = useState<ArticleViewModel[]>([]);
   const [breaking, setBreaking] = useState<BreakingTickerItem[]>([]);
@@ -88,9 +90,13 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const ensureSession = useCallback(async () => {
-    if (sessionToken && csrfToken) {
-      return { sessionToken, csrfToken };
+  const ensureSession = useCallback(async (forceRefresh = false) => {
+    if (!forceRefresh && sessionTokenRef.current && csrfTokenRef.current) {
+      return { sessionToken: sessionTokenRef.current, csrfToken: csrfTokenRef.current };
+    }
+    if (forceRefresh) {
+      sessionTokenRef.current = '';
+      csrfTokenRef.current = '';
     }
     if (!sessionPromiseRef.current) {
       sessionPromiseRef.current = fetch('/api/session', { credentials: 'same-origin' })
@@ -98,6 +104,7 @@ export default function App() {
         .then((data) => {
           if (data?.csrfToken && data?.sessionToken) {
             sessionTokenRef.current = data.sessionToken;
+            csrfTokenRef.current = data.csrfToken;
             setSessionToken(data.sessionToken);
             setCsrfToken(data.csrfToken);
             return { sessionToken: data.sessionToken as string, csrfToken: data.csrfToken as string };
@@ -110,7 +117,7 @@ export default function App() {
         });
     }
     return sessionPromiseRef.current;
-  }, [sessionToken, csrfToken]);
+  }, []);
 
   // Bootstrap opaque HttpOnly session & CSRF token silently
   useEffect(() => {
@@ -140,7 +147,12 @@ export default function App() {
         setArticles(data.articles ?? []);
         setBreaking(data.breaking ?? []);
         setTrendingTags(data.trendingTags ?? []);
-        if (data.siteConfig) setSiteConfig(data.siteConfig);
+        if (data.siteConfig) {
+          setSiteConfig(data.siteConfig);
+          if (!userSelectedLangRef.current && data.siteConfig.defaultLanguage) {
+            setLang(data.siteConfig.defaultLanguage);
+          }
+        }
       }
     } finally {
       setIsLoading(false);
@@ -287,12 +299,20 @@ export default function App() {
         }}
         onOpenSearch={() => setSearchOpen(true)}
         onOpenArchitecture={() => setArchitectureOpen(true)}
-        onOpenAdmin={() => setAdminOpen(true)}
+        onOpenAdmin={() => {
+          setAdminOpen(true);
+          const url = new URL(window.location.href);
+          url.searchParams.set('view', 'admin');
+          window.history.replaceState({}, '', url.toString());
+        }}
       />
 
       <UtilityRibbon
         lang={lang}
-        onChangeLang={setLang}
+        onChangeLang={(nextLang) => {
+          userSelectedLangRef.current = true;
+          setLang(nextLang);
+        }}
         theme={theme}
         onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
         breaking={breaking}
@@ -461,12 +481,21 @@ export default function App() {
 
       <AdminPanel
         isOpen={adminOpen}
-        onClose={() => setAdminOpen(false)}
+        onClose={() => {
+          setAdminOpen(false);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('view');
+          window.history.replaceState({}, '', url.toString());
+        }}
         sessionToken={sessionToken}
         csrfToken={csrfToken}
         onEnsureSession={ensureSession}
         adminToken={adminToken}
         onSetAdminToken={setAdminToken}
+        onApplyDefaultLanguage={(nextLang) => {
+          userSelectedLangRef.current = false;
+          setLang(nextLang);
+        }}
         onPortalUpdated={() => {
           fetchFeed();
           fetchMostRead();

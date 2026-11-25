@@ -514,10 +514,20 @@ class NewsRepositoryAndRecommender {
     if (typeof patch.title === 'string' && patch.title.trim()) {
       const cleanTitle = patch.title.trim().slice(0, 180);
       existing.title = { en: cleanTitle, az: cleanTitle, ru: cleanTitle };
+      existing.imageCaption = {
+        en: `${cleanTitle} — LightNews Editorial Desk.`,
+        az: `${cleanTitle} — LightNews Redaksiyası.`,
+        ru: `${cleanTitle} — Редакция LightNews.`,
+      };
     }
     if (typeof patch.excerpt === 'string' && patch.excerpt.trim()) {
       const cleanExcerpt = patch.excerpt.trim().slice(0, 340);
       existing.excerpt = { en: cleanExcerpt, az: cleanExcerpt, ru: cleanExcerpt };
+      existing.pullQuote = {
+        en: `“${cleanExcerpt.slice(0, 140)}”`,
+        az: `“${cleanExcerpt.slice(0, 140)}”`,
+        ru: `«${cleanExcerpt.slice(0, 140)}»`,
+      };
     }
     if (typeof patch.bodyText === 'string' && patch.bodyText.trim()) {
       const safeHtml = this.textToSafeParagraphs(patch.bodyText);
@@ -535,6 +545,16 @@ class NewsRepositoryAndRecommender {
     }
     if (typeof patch.imageUrl === 'string' && patch.imageUrl.trim()) {
       existing.mediaAsset.cdnUrl = this.normalizeSafeImageUrl(patch.imageUrl);
+    }
+    if (typeof patch.authorName === 'string' && patch.authorName.trim()) {
+      existing.author.name = patch.authorName.trim().slice(0, 60);
+    }
+    if (typeof patch.authorRole === 'string' && patch.authorRole.trim()) {
+      const cleanRole = patch.authorRole.trim().slice(0, 60);
+      existing.author.role = { en: cleanRole, az: cleanRole, ru: cleanRole };
+    }
+    if (typeof patch.readTimeMinutes === 'number' && Number.isFinite(patch.readTimeMinutes)) {
+      existing.readTimeMinutes = Math.max(1, Math.min(30, Math.round(patch.readTimeMinutes)));
     }
     if (typeof patch.isBreaking === 'boolean') {
       existing.isBreaking = patch.isBreaking;

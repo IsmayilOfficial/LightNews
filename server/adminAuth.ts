@@ -38,6 +38,14 @@ export async function claimInitialAdminPassword(password: string): Promise<boole
   return true;
 }
 
+export async function updateClaimedAdminPassword(newPassword: string): Promise<boolean> {
+  if (getEnvAdminPasscode()) {
+    return false;
+  }
+  claimedAdminHash = await hashPassword(newPassword);
+  return true;
+}
+
 export async function verifyAdminCredential(candidate: string): Promise<boolean> {
   if (!candidate || typeof candidate !== 'string') return false;
 

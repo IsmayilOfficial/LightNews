@@ -2,18 +2,23 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  Download,
+  Eye,
+  EyeOff,
   FileText,
+  KeyRound,
   LayoutDashboard,
   Lock,
   LogOut,
   Mail,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   Trash2,
 } from 'lucide-react';
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AdminArticleInput,
   AdminAuthStatus,
@@ -31,13 +36,15 @@ interface AdminPanelProps {
   onClose: () => void;
   sessionToken: string;
   csrfToken: string;
-  onEnsureSession: () => Promise<{ sessionToken: string; csrfToken: string } | null>;
+  onEnsureSession: (forceRefresh?: boolean) => Promise<{ sessionToken: string; csrfToken: string } | null>;
   adminToken: string;
   onSetAdminToken: (token: string) => void;
+  onApplyDefaultLanguage?: (lang: Language) => void;
   onPortalUpdated: () => void;
 }
 
 type AdminSection = 'overview' | 'articles' | 'subscribers' | 'settings';
+type ArticleStatusFilter = 'all' | 'breaking' | 'featured';
 
 const ARTICLE_CATEGORIES: Exclude<CategorySlug, 'all'>[] = [
   'politics',
@@ -67,13 +74,20 @@ export function AdminPanel({
   onEnsureSession,
   adminToken,
   onSetAdminToken,
+  onApplyDefaultLanguage,
   onPortalUpdated,
 }: AdminPanelProps) {
   const [authStatus, setAuthStatus] = useState<AdminAuthStatus | null>(null);
+  const [authChecking, setAuthChecking] = useState(false);
+  const [authStatusError, setAuthStatusError] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+  const confirmInputRef = useRef<HTMLInputElement>(null);
 
   const [section, setSection] = useState<AdminSection>('overview');
   const [overview, setOverview] = useState<AdminOverviewMetrics | null>(null);
@@ -93,11 +107,21 @@ export function AdminPanel({
   // Article search / filter + editor modal state
   const [articleQuery, setArticleQuery] = useState('');
   const [articleCategoryFilter, setArticleCategoryFilter] = useState<CategorySlug>('all');
+  const [articleStatusFilter, setArticleStatusFilter] = useState<ArticleStatusFilter>('all');
   const [subscriberQuery, setSubscriberQuery] = useState('');
+  const [newSubscriberEmail, setNewSubscriberEmail] = useState('');
+  const [newSubscriberLang, setNewSubscriberLang] = useState<Language>('en');
+  const [addingSubscriber, setAddingSubscriber] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Claimed local password rotation state
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [confirmNewAdminPassword, setConfirmNewAdminPassword] = useState('');
+  const [rotatingPassword, setRotatingPassword] = useState(false);
 
   const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [useCustomImageUrl, setUseCustomImageUrl] = useState(false);
   const [formState, setFormState] = useState<AdminArticleInput>({
     title: '',
     excerpt: '',
@@ -114,7 +138,7 @@ export function AdminPanel({
   const [tagsText, setTagsText] = useState('');
 
   const buildAuthHeaders = useCallback(
-    async (includeCsrf: boolean): Promise<Record<string, string>> => {
+    async (includeCsrf: boolean, forceRefreshSession = false): Promise<Record<string, string>> => {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
@@ -122,10 +146,10 @@ export function AdminPanel({
         headers['X-Admin-Token'] = adminToken;
       }
       if (includeCsrf) {
-        let sToken = sessionToken;
-        let cToken = csrfToken;
+        let sToken = forceRefreshSession ? '' : sessionToken;
+        let cToken = forceRefreshSession ? '' : csrfToken;
         if (!sToken || !cToken) {
-          const auth = await onEnsureSession();
+          const auth = await onEnsureSession(forceRefreshSession);
           if (auth) {
             sToken = auth.sessionToken;
             cToken = auth.csrfToken;
@@ -139,7 +163,33 @@ export function AdminPanel({
     [adminToken, sessionToken, csrfToken, onEnsureSession]
   );
 
+  // Wrapper for mutating requests that refreshes CSRF/session token once on 403
+  const fetchWithAdminMutation = useCallback(
+    async (url: string, options: Omit<RequestInit, 'headers' | 'credentials'>): Promise<Response> => {
+      let headers = await buildAuthHeaders(true, false);
+      let res = await fetch(url, {
+        ...options,
+        credentials: 'same-origin',
+        headers,
+      });
+
+      if (res.status === 403) {
+        headers = await buildAuthHeaders(true, true);
+        res = await fetch(url, {
+          ...options,
+          credentials: 'same-origin',
+          headers,
+        });
+      }
+
+      return res;
+    },
+    [buildAuthHeaders]
+  );
+
   const checkAuthStatus = useCallback(async () => {
+    setAuthChecking(true);
+    setAuthStatusError(false);
     try {
       const headers: Record<string, string> = {};
       if (adminToken) headers['X-Admin-Token'] = adminToken;
@@ -153,9 +203,13 @@ export function AdminPanel({
         if (!data.authenticated && adminToken) {
           onSetAdminToken('');
         }
+      } else {
+        setAuthStatusError(true);
       }
     } catch {
-      // Ignore transient error
+      setAuthStatusError(true);
+    } finally {
+      setAuthChecking(false);
     }
   }, [adminToken, onSetAdminToken]);
 
@@ -222,32 +276,33 @@ export function AdminPanel({
     e.preventDefault();
     setAuthError('');
 
+    // Read DOM ref as fallback in case browser autofill populated the input without firing onChange
+    const effectivePassword = password || passwordInputRef.current?.value || '';
+    const effectiveConfirm = confirmPassword || confirmInputRef.current?.value || '';
+
     if (authStatus?.setupRequired) {
-      if (password.length < 8) {
+      if (effectivePassword.length < 8) {
         setAuthError('Password must be at least 8 characters.');
         return;
       }
-      if (password !== confirmPassword) {
+      if (effectivePassword !== effectiveConfirm) {
         setAuthError('Passwords do not match.');
         return;
       }
-    } else if (!password) {
+    } else if (!effectivePassword) {
       setAuthError('Please enter your admin password.');
       return;
     }
 
     setAuthLoading(true);
     try {
-      const headers = await buildAuthHeaders(true);
       const endpoint = authStatus?.setupRequired
         ? '/api/admin/auth/setup'
         : '/api/admin/auth/login';
 
-      const res = await fetch(endpoint, {
+      const res = await fetchWithAdminMutation(endpoint, {
         method: 'POST',
-        credentials: 'same-origin',
-        headers,
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: effectivePassword }),
       });
 
       const data = await res.json().catch(() => null);
@@ -260,7 +315,12 @@ export function AdminPanel({
       onSetAdminToken(data.adminToken);
       setPassword('');
       setConfirmPassword('');
-      setAuthStatus({ setupRequired: false, envConfigured: Boolean(authStatus?.envConfigured), authenticated: true });
+      setShowPassword(false);
+      setAuthStatus({
+        setupRequired: false,
+        envConfigured: Boolean(authStatus?.envConfigured),
+        authenticated: true,
+      });
     } catch {
       setAuthError('Unable to reach authentication service.');
     } finally {
@@ -270,12 +330,7 @@ export function AdminPanel({
 
   const handleLogout = async () => {
     try {
-      const headers = await buildAuthHeaders(true);
-      await fetch('/api/admin/auth/logout', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers,
-      });
+      await fetchWithAdminMutation('/api/admin/auth/logout', { method: 'POST' });
     } catch {
       // Clear local memory token regardless
     }
@@ -285,12 +340,13 @@ export function AdminPanel({
 
   const openCreateEditor = () => {
     setEditingArticleId(null);
+    setUseCustomImageUrl(false);
     setFormState({
       title: '',
       excerpt: '',
       bodyText: '',
       category: 'politics',
-      tags: ['Breaking'],
+      tags: ['Breaking', 'Editorial'],
       imageUrl: CURATED_IMAGES[0].url,
       authorName: 'LightNews Desk',
       authorRole: 'Editorial Staff',
@@ -309,6 +365,8 @@ export function AdminPanel({
       .replace(/<[^>]+>/g, '')
       .trim();
 
+    const isCurated = CURATED_IMAGES.some((img) => img.url === article.imageUrl);
+    setUseCustomImageUrl(!isCurated);
     setEditingArticleId(article.id);
     setFormState({
       title: article.title,
@@ -340,21 +398,22 @@ export function AdminPanel({
     };
 
     try {
-      const headers = await buildAuthHeaders(true);
       const url = editingArticleId
         ? `/api/admin/articles/${encodeURIComponent(editingArticleId)}`
         : '/api/admin/articles';
       const method = editingArticleId ? 'PATCH' : 'POST';
 
-      const res = await fetch(url, {
+      const res = await fetchWithAdminMutation(url, {
         method,
-        credentials: 'same-origin',
-        headers,
         body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => null);
       if (!res.ok) {
+        if (res.status === 401) {
+          onSetAdminToken('');
+          return;
+        }
         notify('err', data?.error || 'Failed to save article.');
         return;
       }
@@ -373,16 +432,29 @@ export function AdminPanel({
     field: 'isBreaking' | 'isFeatured'
   ) => {
     try {
-      const headers = await buildAuthHeaders(true);
-      const res = await fetch(`/api/admin/articles/${encodeURIComponent(article.id)}`, {
-        method: 'PATCH',
-        credentials: 'same-origin',
-        headers,
-        body: JSON.stringify({ [field]: !article[field] }),
-      });
+      const nextVal = !article[field];
+      const res = await fetchWithAdminMutation(
+        `/api/admin/articles/${encodeURIComponent(article.id)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ [field]: nextVal }),
+        }
+      );
       if (res.ok) {
+        notify(
+          'ok',
+          field === 'isBreaking'
+            ? nextVal
+              ? 'Added to Breaking News ticker.'
+              : 'Removed from Breaking News ticker.'
+            : nextVal
+            ? 'Promoted to Hero section.'
+            : 'Moved to standard feed.'
+        );
         await loadAdminData();
         onPortalUpdated();
+      } else if (res.status === 401) {
+        onSetAdminToken('');
       }
     } catch {
       notify('err', 'Could not update article status.');
@@ -391,56 +463,113 @@ export function AdminPanel({
 
   const handleDeleteArticle = async (id: string) => {
     try {
-      const headers = await buildAuthHeaders(true);
-      const res = await fetch(`/api/admin/articles/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        credentials: 'same-origin',
-        headers,
-      });
+      const res = await fetchWithAdminMutation(
+        `/api/admin/articles/${encodeURIComponent(id)}`,
+        { method: 'DELETE' }
+      );
       if (res.ok) {
         setConfirmDeleteId(null);
         notify('ok', 'Article deleted.');
         await loadAdminData();
         onPortalUpdated();
+      } else if (res.status === 401) {
+        onSetAdminToken('');
       }
     } catch {
       notify('err', 'Failed to delete article.');
     }
   };
 
+  const handleAddSubscriber = async (e: FormEvent) => {
+    e.preventDefault();
+    const email = newSubscriberEmail.trim().toLowerCase();
+    if (!email) return;
+
+    setAddingSubscriber(true);
+    try {
+      const res = await fetchWithAdminMutation('/api/admin/subscribers', {
+        method: 'POST',
+        body: JSON.stringify({ email, lang: newSubscriberLang }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        if (res.status === 401) {
+          onSetAdminToken('');
+          return;
+        }
+        notify('err', data?.error || 'Could not add subscriber.');
+        return;
+      }
+      setNewSubscriberEmail('');
+      notify(
+        'ok',
+        data?.alreadySubscribed
+          ? `${email} is already subscribed.`
+          : `Added ${email} to Daily Briefing list.`
+      );
+      await loadAdminData();
+    } catch {
+      notify('err', 'Network error while adding subscriber.');
+    } finally {
+      setAddingSubscriber(false);
+    }
+  };
+
   const handleRemoveSubscriber = async (email: string) => {
     try {
-      const headers = await buildAuthHeaders(true);
-      const res = await fetch('/api/admin/subscribers', {
+      const res = await fetchWithAdminMutation('/api/admin/subscribers', {
         method: 'DELETE',
-        credentials: 'same-origin',
-        headers,
         body: JSON.stringify({ email }),
       });
       if (res.ok) {
         notify('ok', `Removed ${email}.`);
         await loadAdminData();
+      } else if (res.status === 401) {
+        onSetAdminToken('');
       }
     } catch {
       notify('err', 'Could not remove subscriber.');
     }
   };
 
+  const handleExportSubscribersCsv = () => {
+    if (subscribers.length === 0) return;
+    const rows = [
+      'email,language,subscribed_at',
+      ...subscribers.map(
+        (s) =>
+          `"${s.email.replace(/"/g, '""')}","${s.lang}","${new Date(s.subscribedAt).toISOString()}"`
+      ),
+    ];
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `lightnews-subscribers-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    notify('ok', `Exported ${subscribers.length} subscriber(s) to CSV.`);
+  };
+
   const handleSaveSettings = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      const headers = await buildAuthHeaders(true);
-      const res = await fetch('/api/admin/settings', {
+      const res = await fetchWithAdminMutation('/api/admin/settings', {
         method: 'PATCH',
-        credentials: 'same-origin',
-        headers,
         body: JSON.stringify(siteConfig),
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.siteConfig) setSiteConfig(data.siteConfig);
+        if (data.siteConfig) {
+          setSiteConfig(data.siteConfig);
+          onApplyDefaultLanguage?.(data.siteConfig.defaultLanguage);
+        }
         notify('ok', 'Portal settings saved and applied live.');
         onPortalUpdated();
+      } else if (res.status === 401) {
+        onSetAdminToken('');
       } else {
         notify('err', 'Failed to update portal settings.');
       }
@@ -449,10 +578,44 @@ export function AdminPanel({
     }
   };
 
+  const handleRotateClaimedPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    if (newAdminPassword.length < 8) {
+      notify('err', 'New password must be at least 8 characters.');
+      return;
+    }
+    if (newAdminPassword !== confirmNewAdminPassword) {
+      notify('err', 'Passwords do not match.');
+      return;
+    }
+
+    setRotatingPassword(true);
+    try {
+      const res = await fetchWithAdminMutation('/api/admin/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ newPassword: newAdminPassword }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        notify('err', data?.error || 'Could not update password.');
+        return;
+      }
+      setNewAdminPassword('');
+      setConfirmNewAdminPassword('');
+      notify('ok', 'Admin password updated.');
+    } catch {
+      notify('err', 'Network error updating password.');
+    } finally {
+      setRotatingPassword(false);
+    }
+  };
+
   const filteredArticles = useMemo(() => {
     const q = articleQuery.trim().toLowerCase();
     return articles.filter((a) => {
       if (articleCategoryFilter !== 'all' && a.category !== articleCategoryFilter) return false;
+      if (articleStatusFilter === 'breaking' && !a.isBreaking) return false;
+      if (articleStatusFilter === 'featured' && !a.isFeatured) return false;
       if (!q) return true;
       return (
         a.title.toLowerCase().includes(q) ||
@@ -460,7 +623,7 @@ export function AdminPanel({
         a.tags.some((t) => t.toLowerCase().includes(q))
       );
     });
-  }, [articles, articleQuery, articleCategoryFilter]);
+  }, [articles, articleQuery, articleCategoryFilter, articleStatusFilter]);
 
   const filteredSubscribers = useMemo(() => {
     const q = subscriberQuery.trim().toLowerCase();
@@ -471,7 +634,7 @@ export function AdminPanel({
   if (!isOpen) return null;
 
   // =========================================================================
-  // Auth Gate (First-Run Setup or Login)
+  // Auth Gate (Loading / First-Run Setup / Login)
   // =========================================================================
   if (!adminToken) {
     const isSetup = Boolean(authStatus?.setupRequired);
@@ -499,77 +662,140 @@ export function AdminPanel({
 
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-8">
-            <div className="w-10 h-10 rounded-lg bg-[#0070FF]/10 text-[#0070FF] dark:text-[#3894FF] flex items-center justify-center mb-4">
-              {isSetup ? <ShieldCheck className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-            </div>
-
-            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-1.5">
-              {isSetup ? 'Claim Admin Access' : 'Admin Console Sign In'}
-            </h1>
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-6">
-              {isSetup
-                ? 'Set an initial administrator password for this preview instance (minimum 8 characters). In production, configure ADMIN_PASSCODE in Settings -> Secrets.'
-                : 'Enter your administrator password to manage LightNews articles, breaking alerts, subscribers, and portal controls.'}
-            </p>
-
-            <form onSubmit={handleAuthSubmit} className="space-y-4">
-              <div>
-                <label
-                  htmlFor="admin-password"
-                  className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
-                >
-                  {isSetup ? 'New Admin Password' : 'Admin Password'}
-                </label>
-                <input
-                  id="admin-password"
-                  type="password"
-                  autoComplete={isSetup ? 'new-password' : 'current-password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full h-10 px-3.5 text-sm rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#0070FF]"
-                />
-              </div>
-
-              {isSetup && (
-                <div>
-                  <label
-                    htmlFor="admin-confirm-password"
-                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
-                  >
-                    Confirm Password
-                  </label>
-                  <input
-                    id="admin-confirm-password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full h-10 px-3.5 text-sm rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#0070FF]"
-                  />
-                </div>
-              )}
-
-              {authError && (
-                <p role="alert" className="flex items-center gap-1.5 text-xs font-medium text-rose-600 dark:text-rose-400">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span>{authError}</span>
+            {authChecking && !authStatus ? (
+              <div className="py-10 flex flex-col items-center justify-center gap-3 text-center">
+                <RefreshCw className="w-6 h-6 text-[#0070FF] animate-spin" />
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Checking Admin Console status...
                 </p>
-              )}
+              </div>
+            ) : authStatusError && !authStatus ? (
+              <div className="py-6 text-center space-y-4">
+                <div className="w-10 h-10 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                    Unable to reach Admin service
+                  </h1>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Make sure the LightNews server is running and try again.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={checkAuthStatus}
+                  className="inline-flex items-center gap-2 h-9 px-4 text-xs font-semibold text-white bg-[#0070FF] hover:bg-[#005CE6] rounded-lg cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="w-10 h-10 rounded-lg bg-[#0070FF]/10 text-[#0070FF] dark:text-[#3894FF] flex items-center justify-center mb-4">
+                  {isSetup ? <ShieldCheck className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                </div>
 
-              <button
-                type="submit"
-                disabled={authLoading}
-                className="w-full h-10 text-sm font-semibold text-white bg-[#0070FF] hover:bg-[#005CE6] disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
-              >
-                {authLoading
-                  ? 'Verifying...'
-                  : isSetup
-                  ? 'Set Password & Open Console'
-                  : 'Sign In'}
-              </button>
-            </form>
+                <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-1.5">
+                  {isSetup ? 'Claim Admin Access' : 'Admin Console Sign In'}
+                </h1>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-6">
+                  {isSetup
+                    ? 'Set an initial administrator password for this preview instance (minimum 8 characters). In production, configure ADMIN_PASSCODE in Settings → Secrets.'
+                    : authStatus?.envConfigured
+                    ? 'Enter the ADMIN_PASSCODE configured in your Settings → Secrets panel to manage articles, breaking alerts, subscribers, and portal controls.'
+                    : 'Enter your administrator password to manage LightNews articles, breaking alerts, subscribers, and portal controls.'}
+                </p>
+
+                <form onSubmit={handleAuthSubmit} className="space-y-4">
+                  <div>
+                    <label
+                      htmlFor="admin-password"
+                      className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+                    >
+                      {isSetup ? 'New Admin Password' : 'Admin Password'}
+                    </label>
+                    <div className="relative">
+                      <input
+                        ref={passwordInputRef}
+                        id="admin-password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete={isSetup ? 'new-password' : 'current-password'}
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          if (authError) setAuthError('');
+                        }}
+                        placeholder="••••••••"
+                        className="w-full h-10 pl-3.5 pr-10 text-sm rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#0070FF]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {isSetup && (
+                    <div>
+                      <label
+                        htmlFor="admin-confirm-password"
+                        className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+                      >
+                        Confirm Password
+                      </label>
+                      <input
+                        ref={confirmInputRef}
+                        id="admin-confirm-password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        value={confirmPassword}
+                        onChange={(e) => {
+                          setConfirmPassword(e.target.value);
+                          if (authError) setAuthError('');
+                        }}
+                        placeholder="••••••••"
+                        className="w-full h-10 px-3.5 text-sm rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#0070FF]"
+                      />
+                    </div>
+                  )}
+
+                  {authError && (
+                    <p
+                      role="alert"
+                      className="flex items-center gap-1.5 text-xs font-medium text-rose-600 dark:text-rose-400"
+                    >
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{authError}</span>
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full h-10 text-sm font-semibold text-white bg-[#0070FF] hover:bg-[#005CE6] disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
+                  >
+                    {authLoading
+                      ? 'Verifying...'
+                      : isSetup
+                      ? 'Set Password & Open Console'
+                      : 'Sign In'}
+                  </button>
+                </form>
+
+                {authStatus?.envConfigured && (
+                  <p className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Need to update or clear your passcode? Edit <code className="font-mono">ADMIN_PASSCODE</code> in{' '}
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">Settings → Secrets</span>.
+                  </p>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -606,6 +832,15 @@ export function AdminPanel({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={loadAdminData}
+            aria-label="Refresh admin data"
+            className="inline-flex items-center justify-center w-9 h-9 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${dataLoading ? 'animate-spin' : ''}`} />
+          </button>
+
           <button
             type="button"
             onClick={openCreateEditor}
@@ -696,7 +931,14 @@ export function AdminPanel({
                 overview && (
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 rounded-xl p-5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setArticleStatusFilter('all');
+                          setSection('articles');
+                        }}
+                        className="text-left bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 hover:border-[#0070FF] rounded-xl p-5 transition-colors cursor-pointer"
+                      >
                         <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
                           Published Articles
                         </div>
@@ -706,7 +948,7 @@ export function AdminPanel({
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono-tabular">
                           {overview.breakingCount} breaking · {overview.featuredCount} featured
                         </div>
-                      </div>
+                      </button>
 
                       <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 rounded-xl p-5">
                         <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -732,7 +974,11 @@ export function AdminPanel({
                         </div>
                       </div>
 
-                      <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 rounded-xl p-5">
+                      <button
+                        type="button"
+                        onClick={() => setSection('subscribers')}
+                        className="text-left bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 hover:border-[#0070FF] rounded-xl p-5 transition-colors cursor-pointer"
+                      >
                         <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
                           Digest Subscribers
                         </div>
@@ -740,9 +986,48 @@ export function AdminPanel({
                           {overview.subscriberCount}
                         </div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                          Daily briefing list
+                          Manage briefing list →
                         </div>
-                      </div>
+                      </button>
+                    </div>
+
+                    {/* Quick Editorial Actions */}
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={openCreateEditor}
+                        className="inline-flex items-center gap-1.5 h-9 px-3.5 text-xs font-semibold text-white bg-[#0070FF] hover:bg-[#005CE6] rounded-lg cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Write New Story</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setArticleStatusFilter('breaking');
+                          setSection('articles');
+                        }}
+                        className="h-9 px-3.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 hover:border-[#0070FF] rounded-lg cursor-pointer"
+                      >
+                        Breaking Queue ({overview.breakingCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setArticleStatusFilter('featured');
+                          setSection('articles');
+                        }}
+                        className="h-9 px-3.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 hover:border-[#0070FF] rounded-lg cursor-pointer"
+                      >
+                        Hero Featured ({overview.featuredCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSection('settings')}
+                        className="h-9 px-3.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 hover:border-[#0070FF] rounded-lg cursor-pointer"
+                      >
+                        Portal Controls
+                      </button>
                     </div>
 
                     <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
@@ -763,7 +1048,15 @@ export function AdminPanel({
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {overview.byCategory.map((row) => (
-                              <tr key={row.category} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                              <tr
+                                key={row.category}
+                                onClick={() => {
+                                  setArticleCategoryFilter(row.category);
+                                  setArticleStatusFilter('all');
+                                  setSection('articles');
+                                }}
+                                className="hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
+                              >
                                 <td className="px-5 py-3 font-semibold capitalize text-slate-900 dark:text-slate-100">
                                   {row.category}
                                 </td>
@@ -791,9 +1084,9 @@ export function AdminPanel({
           {/* SECTION 2: ARTICLES CRUD */}
           {section === 'articles' && (
             <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex flex-1 items-center gap-2.5">
-                  <div className="relative flex-1 max-w-sm">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="flex flex-wrap flex-1 items-center gap-2.5">
+                  <div className="relative flex-1 min-w-[200px] max-w-sm">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="search"
@@ -815,6 +1108,16 @@ export function AdminPanel({
                         {c}
                       </option>
                     ))}
+                  </select>
+                  <select
+                    aria-label="Filter by status"
+                    value={articleStatusFilter}
+                    onChange={(e) => setArticleStatusFilter(e.target.value as ArticleStatusFilter)}
+                    className="h-9 px-3 text-xs rounded-lg bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200"
+                  >
+                    <option value="all">All Placements</option>
+                    <option value="breaking">Breaking Ticker Only</option>
+                    <option value="featured">Hero Featured Only</option>
                   </select>
                 </div>
 
@@ -839,6 +1142,7 @@ export function AdminPanel({
                       onClick={() => {
                         setArticleQuery('');
                         setArticleCategoryFilter('all');
+                        setArticleStatusFilter('all');
                       }}
                       className="px-3.5 py-2 text-xs font-semibold text-white bg-[#0070FF] rounded-lg cursor-pointer"
                     >
@@ -866,7 +1170,7 @@ export function AdminPanel({
                                 {art.title}
                               </div>
                               <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                {art.author.name}
+                                {art.author.name} · {art.readTimeMinutes}m read
                               </div>
                             </td>
                             <td className="px-4 py-3 capitalize font-medium text-slate-600 dark:text-slate-300">
@@ -911,13 +1215,22 @@ export function AdminPanel({
                                   Edit
                                 </button>
                                 {confirmDeleteId === art.id ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteArticle(art.id)}
-                                    className="px-2.5 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded cursor-pointer"
-                                  >
-                                    Confirm
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteArticle(art.id)}
+                                      className="px-2.5 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded cursor-pointer"
+                                    >
+                                      Confirm
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteId(null)}
+                                      className="px-2 py-1 text-xs font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 rounded cursor-pointer"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </>
                                 ) : (
                                   <button
                                     type="button"
@@ -943,15 +1256,58 @@ export function AdminPanel({
           {/* SECTION 3: SUBSCRIBERS */}
           {section === 'subscribers' && (
             <div className="space-y-4">
-              <div className="relative max-w-sm">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="search"
-                  value={subscriberQuery}
-                  onChange={(e) => setSubscriberQuery(e.target.value)}
-                  placeholder="Search subscriber email..."
-                  className="w-full h-9 pl-9 pr-3 text-xs rounded-lg bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#0070FF]"
-                />
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="search"
+                    value={subscriberQuery}
+                    onChange={(e) => setSubscriberQuery(e.target.value)}
+                    placeholder="Search subscriber email..."
+                    className="w-full h-9 pl-9 pr-3 text-xs rounded-lg bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#0070FF]"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <form onSubmit={handleAddSubscriber} className="flex items-center gap-2">
+                    <input
+                      type="email"
+                      required
+                      value={newSubscriberEmail}
+                      onChange={(e) => setNewSubscriberEmail(e.target.value)}
+                      placeholder="Add subscriber email..."
+                      className="h-9 px-3 text-xs rounded-lg bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#0070FF]"
+                    />
+                    <select
+                      aria-label="Subscriber digest language"
+                      value={newSubscriberLang}
+                      onChange={(e) => setNewSubscriberLang(e.target.value as Language)}
+                      className="h-9 px-2.5 text-xs rounded-lg bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200"
+                    >
+                      <option value="en">EN</option>
+                      <option value="az">AZ</option>
+                      <option value="ru">RU</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={addingSubscriber}
+                      className="inline-flex items-center gap-1 h-9 px-3.5 text-xs font-semibold text-white bg-[#0070FF] hover:bg-[#005CE6] disabled:opacity-60 rounded-lg whitespace-nowrap cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add</span>
+                    </button>
+                  </form>
+
+                  <button
+                    type="button"
+                    disabled={subscribers.length === 0}
+                    onClick={handleExportSubscribersCsv}
+                    className="inline-flex items-center gap-1.5 h-9 px-3.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 hover:border-[#0070FF] disabled:opacity-50 rounded-lg whitespace-nowrap cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export CSV</span>
+                  </button>
+                </div>
               </div>
 
               <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
@@ -961,7 +1317,7 @@ export function AdminPanel({
                       No newsletter subscribers captured yet
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Emails submitted through the footer Daily Briefing Digest form will appear here.
+                      Emails submitted through the footer Daily Briefing Digest form or added above will appear here.
                     </p>
                   </div>
                 ) : (
@@ -1008,121 +1364,173 @@ export function AdminPanel({
 
           {/* SECTION 4: SITE CONTROLS */}
           {section === 'settings' && (
-            <form
-              onSubmit={handleSaveSettings}
-              className="max-w-2xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-5"
-            >
-              <div>
-                <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  Portal Runtime Controls
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Changes apply immediately across the public LightNews portal.
-                </p>
-              </div>
-
-              <div className="space-y-4 pt-2 border-t border-slate-200 dark:border-slate-800">
-                <label className="flex items-center justify-between gap-4 cursor-pointer">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      Breaking News Ticker
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      Display the scrolling live breaking headlines strip at the top of the portal.
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={siteConfig.breakingTickerEnabled}
-                    onChange={(e) =>
-                      setSiteConfig((prev) => ({
-                        ...prev,
-                        breakingTickerEnabled: e.target.checked,
-                      }))
-                    }
-                    className="w-4 h-4 accent-[#0070FF] cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between gap-4 cursor-pointer">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      Silent Behavioral Personalization
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      Blend session reading affinity into feed order; disable for pure chronological sorting.
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={siteConfig.personalizationEnabled}
-                    onChange={(e) =>
-                      setSiteConfig((prev) => ({
-                        ...prev,
-                        personalizationEnabled: e.target.checked,
-                      }))
-                    }
-                    className="w-4 h-4 accent-[#0070FF] cursor-pointer"
-                  />
-                </label>
-
+            <div className="max-w-2xl space-y-6">
+              <form
+                onSubmit={handleSaveSettings}
+                className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-5"
+              >
                 <div>
-                  <label
-                    htmlFor="default-lang-select"
-                    className="block text-sm font-semibold text-slate-900 dark:text-slate-100 mb-1"
-                  >
-                    Default Portal Language
-                  </label>
-                  <select
-                    id="default-lang-select"
-                    value={siteConfig.defaultLanguage}
-                    onChange={(e) =>
-                      setSiteConfig((prev) => ({
-                        ...prev,
-                        defaultLanguage: e.target.value as Language,
-                      }))
-                    }
-                    className="h-9 px-3 text-xs rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
-                  >
-                    <option value="en">English (EN)</option>
-                    <option value="az">Azərbaycanca (AZ)</option>
-                    <option value="ru">Русский (RU)</option>
-                  </select>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    Portal Runtime Controls
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Changes apply immediately across the public LightNews portal.
+                  </p>
                 </div>
 
-                <div>
-                  <label
-                    htmlFor="announcement-banner"
-                    className="block text-sm font-semibold text-slate-900 dark:text-slate-100 mb-1"
-                  >
-                    Editorial Announcement Banner
+                <div className="space-y-4 pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <label className="flex items-center justify-between gap-4 cursor-pointer">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        Breaking News Ticker
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        Display the scrolling live breaking headlines strip at the top of the portal.
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={siteConfig.breakingTickerEnabled}
+                      onChange={(e) =>
+                        setSiteConfig((prev) => ({
+                          ...prev,
+                          breakingTickerEnabled: e.target.checked,
+                        }))
+                      }
+                      className="w-4 h-4 accent-[#0070FF] cursor-pointer"
+                    />
                   </label>
-                  <input
-                    id="announcement-banner"
-                    type="text"
-                    maxLength={180}
-                    value={siteConfig.announcementBanner}
-                    onChange={(e) =>
-                      setSiteConfig((prev) => ({
-                        ...prev,
-                        announcementBanner: e.target.value,
-                      }))
-                    }
-                    placeholder="Optional notice displayed across the top of LightNews (leave empty to hide)"
-                    className="w-full h-10 px-3.5 text-sm rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#0070FF]"
-                  />
-                </div>
-              </div>
 
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="h-10 px-5 text-sm font-semibold text-white bg-[#0070FF] hover:bg-[#005CE6] rounded-lg cursor-pointer"
-                >
-                  Save Portal Settings
-                </button>
+                  <label className="flex items-center justify-between gap-4 cursor-pointer">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        Silent Behavioral Personalization
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        Blend session reading affinity into feed order; disable for pure chronological sorting.
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={siteConfig.personalizationEnabled}
+                      onChange={(e) =>
+                        setSiteConfig((prev) => ({
+                          ...prev,
+                          personalizationEnabled: e.target.checked,
+                        }))
+                      }
+                      className="w-4 h-4 accent-[#0070FF] cursor-pointer"
+                    />
+                  </label>
+
+                  <div>
+                    <label
+                      htmlFor="default-lang-select"
+                      className="block text-sm font-semibold text-slate-900 dark:text-slate-100 mb-1"
+                    >
+                      Default Portal Language
+                    </label>
+                    <select
+                      id="default-lang-select"
+                      value={siteConfig.defaultLanguage}
+                      onChange={(e) =>
+                        setSiteConfig((prev) => ({
+                          ...prev,
+                          defaultLanguage: e.target.value as Language,
+                        }))
+                      }
+                      className="h-9 px-3 text-xs rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
+                    >
+                      <option value="en">English (EN)</option>
+                      <option value="az">Azərbaycanca (AZ)</option>
+                      <option value="ru">Русский (RU)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="announcement-banner"
+                      className="block text-sm font-semibold text-slate-900 dark:text-slate-100 mb-1"
+                    >
+                      Editorial Announcement Banner
+                    </label>
+                    <input
+                      id="announcement-banner"
+                      type="text"
+                      maxLength={180}
+                      value={siteConfig.announcementBanner}
+                      onChange={(e) =>
+                        setSiteConfig((prev) => ({
+                          ...prev,
+                          announcementBanner: e.target.value,
+                        }))
+                      }
+                      placeholder="Optional notice displayed across the top of LightNews (leave empty to hide)"
+                      className="w-full h-10 px-3.5 text-sm rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#0070FF]"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    className="h-10 px-5 text-sm font-semibold text-white bg-[#0070FF] hover:bg-[#005CE6] rounded-lg cursor-pointer"
+                  >
+                    Save Portal Settings
+                  </button>
+                </div>
+              </form>
+
+              <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <KeyRound className="w-4 h-4 text-[#0070FF] dark:text-[#3894FF]" />
+                  <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    Admin Access Credential
+                  </h2>
+                </div>
+
+                {authStatus?.envConfigured ? (
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Admin authentication is managed by the <code className="font-mono">ADMIN_PASSCODE</code>{' '}
+                    environment secret. To rotate the passcode, update <code className="font-mono">ADMIN_PASSCODE</code>{' '}
+                    in <span className="font-semibold text-slate-800 dark:text-slate-200">Settings → Secrets</span>.
+                  </p>
+                ) : (
+                  <form onSubmit={handleRotateClaimedPassword} className="space-y-3">
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      Update the claimed preview administrator password (minimum 8 characters).
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <input
+                        type="password"
+                        minLength={8}
+                        maxLength={128}
+                        value={newAdminPassword}
+                        onChange={(e) => setNewAdminPassword(e.target.value)}
+                        placeholder="New password"
+                        className="h-9 px-3 text-xs rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
+                      />
+                      <input
+                        type="password"
+                        minLength={8}
+                        maxLength={128}
+                        value={confirmNewAdminPassword}
+                        onChange={(e) => setConfirmNewAdminPassword(e.target.value)}
+                        placeholder="Confirm new password"
+                        className="h-9 px-3 text-xs rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={rotatingPassword}
+                      className="h-9 px-4 text-xs font-semibold text-white bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 disabled:opacity-60 rounded-lg cursor-pointer"
+                    >
+                      {rotatingPassword ? 'Updating...' : 'Update Password'}
+                    </button>
+                  </form>
+                )}
               </div>
-            </form>
+            </div>
           )}
         </main>
       </div>
@@ -1184,7 +1592,7 @@ export function AdminPanel({
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Category
@@ -1224,19 +1632,87 @@ export function AdminPanel({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Cover Photography
+                  Author Role
                 </label>
-                <select
-                  value={formState.imageUrl}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                <input
+                  type="text"
+                  maxLength={60}
+                  value={formState.authorRole}
+                  onChange={(e) =>
+                    setFormState((prev) => ({ ...prev, authorRole: e.target.value }))
+                  }
                   className="w-full h-9 px-3 text-xs rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
-                >
-                  {CURATED_IMAGES.map((img) => (
-                    <option key={img.url} value={img.url}>
-                      {img.label}
-                    </option>
-                  ))}
-                </select>
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Read Time (min)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={formState.readTimeMinutes}
+                  onChange={(e) =>
+                    setFormState((prev) => ({
+                      ...prev,
+                      readTimeMinutes: Math.max(1, Math.min(30, Number(e.target.value) || 1)),
+                    }))
+                  }
+                  className="w-full h-9 px-3 text-xs rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+              <div className="sm:col-span-2 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Cover Photography
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setUseCustomImageUrl((prev) => !prev)}
+                    className="text-[11px] font-semibold text-[#0070FF] dark:text-[#3894FF] hover:underline cursor-pointer"
+                  >
+                    {useCustomImageUrl ? 'Choose Curated Asset' : 'Use Custom HTTPS URL'}
+                  </button>
+                </div>
+
+                {useCustomImageUrl ? (
+                  <input
+                    type="url"
+                    value={formState.imageUrl}
+                    onChange={(e) =>
+                      setFormState((prev) => ({ ...prev, imageUrl: e.target.value }))
+                    }
+                    placeholder="https://..."
+                    className="w-full h-9 px-3 text-xs rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
+                  />
+                ) : (
+                  <select
+                    value={formState.imageUrl}
+                    onChange={(e) =>
+                      setFormState((prev) => ({ ...prev, imageUrl: e.target.value }))
+                    }
+                    className="w-full h-9 px-3 text-xs rounded-lg bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
+                  >
+                    {CURATED_IMAGES.map((img) => (
+                      <option key={img.url} value={img.url}>
+                        {img.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="h-16 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900">
+                <img
+                  src={formState.imageUrl}
+                  alt="Cover preview"
+                  className="w-full h-full object-cover"
+                />
               </div>
             </div>
 
