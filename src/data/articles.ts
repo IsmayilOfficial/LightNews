@@ -1,8 +1,158 @@
-import { ArticleRecord } from '../types/news';
+import { ArticleRecord, AuthorProfile } from '../types/news';
 
 const NOW = Date.now();
 const minsAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
 const hoursAgo = (h: number) => new Date(NOW - h * 3_600_000).toISOString();
+
+export const AUTHORS: Record<string, AuthorProfile> = {
+  'auth-1': {
+    id: 'auth-1',
+    name: 'Kamran Aliyev',
+    location: 'Baku',
+    email: 'k.aliyev@lightnews.az',
+    role: {
+      en: 'Chief Diplomatic Correspondent',
+      az: 'Baş Diplomatik Müxbir',
+      ru: 'Шеф-корреспондент отдела политики',
+    },
+    beat: {
+      en: 'Regional Diplomacy & Infrastructure',
+      az: 'Regional Diplomatiya və İnfrastruktur',
+      ru: 'Региональная дипломатия и инфраструктура',
+    },
+    bio: {
+      en: 'Covers Eurasian diplomacy, cross-border energy corridors, and legislative policy from Baku and Brussels.',
+      az: 'Bakı və Brüsseldən Avrasiya diplomatiyası, transsərhəd enerji dəhlizləri və qanunvericilik siyasətini işıqlandırır.',
+      ru: 'Освещает евразийскую дипломатию, трансграничные энергетические коридоры и законодательную повестку из Баку и Брюсселя.',
+    },
+  },
+  'auth-2': {
+    id: 'auth-2',
+    name: 'Nigar Mammadova',
+    location: 'Baku / Munich',
+    email: 'n.mammadova@lightnews.az',
+    role: {
+      en: 'Senior Technology Editor',
+      az: 'Baş Texnologiya Redaktoru',
+      ru: 'Старший редактор отдела технологий',
+    },
+    beat: {
+      en: 'Semiconductors & AI Systems',
+      az: 'Yarımkeçiricilər və Süni İntellekt',
+      ru: 'Полупроводники и ИИ-системы',
+    },
+    bio: {
+      en: 'Reports on semiconductor manufacturing, photonic interconnects, and sovereign compute infrastructure.',
+      az: 'Yarımkeçirici istehsalı, fotonik bağlantılar və hesablama infrastrukturu üzrə ixtisaslaşıb.',
+      ru: 'Пишет о производстве полупроводников, кремниевой фотонике и вычислительной инфраструктуре.',
+    },
+  },
+  'auth-3': {
+    id: 'auth-3',
+    name: 'David Ross',
+    location: 'London',
+    email: 'd.ross@lightnews.az',
+    role: {
+      en: 'Markets & Macroeconomics Desk',
+      az: 'Bazarlar və Makroiqtisadiyyat Şöbəsi',
+      ru: 'Отдел рынков и макроэкономики',
+    },
+    beat: {
+      en: 'Central Banking & Capital Markets',
+      az: 'Mərkəzi Banklar və Kapital Bazarları',
+      ru: 'Центробанки и рынки капитала',
+    },
+    bio: {
+      en: 'Analyzes sovereign liquidity bridges, trade settlement infrastructure, and emerging-market fiscal policy.',
+      az: 'Suveren likvidlik körpüləri, ticarət hesablaşmaları və maliyyə siyasətini təhlil edir.',
+      ru: 'Анализирует расчетные системы центробанков, ликвидность и фискальную политику развивающихся рынков.',
+    },
+  },
+  'auth-4': {
+    id: 'auth-4',
+    name: 'Elena Lindqvist',
+    location: 'Stockholm',
+    email: 'e.lindqvist@lightnews.az',
+    role: {
+      en: 'Energy & Climate Desk',
+      az: 'Enerji və İqlim Şöbəsi',
+      ru: 'Отдел энергетики и климата',
+    },
+    beat: {
+      en: 'Clean Grids & Climate Policy',
+      az: 'Yaşıl Şəbəkələr və İqlim Siyasəti',
+      ru: 'Зеленая энергетика и климат',
+    },
+    bio: {
+      en: 'Covers offshore wind engineering, grid storage, and international climate finance treaties.',
+      az: 'Dəniz külək energetikası, şəbəkə saxlama texnologiyaları və beynəlxalq iqlim maliyyəsini işıqlandırır.',
+      ru: 'Специализируется на морской ветроэнергетике, системах хранения энергии и климатических соглашениях.',
+    },
+  },
+  'auth-5': {
+    id: 'auth-5',
+    name: 'Rashad Hasanov',
+    location: 'Baku',
+    email: 'r.hasanov@lightnews.az',
+    role: {
+      en: 'Lead Sports Correspondent',
+      az: 'Baş İdman Müxbiri',
+      ru: 'Ведущий спортивный обозреватель',
+    },
+    beat: {
+      en: 'European Football & Stadium Tech',
+      az: 'Avropa Futbolu və Stadion Texnologiyaları',
+      ru: 'Европейский футбол и инфраструктура',
+    },
+    bio: {
+      en: 'Follows continental club competitions, tactical analytics, and modern stadium engineering.',
+      az: 'Qitə klub turnirləri, taktiki analitika və müasir stadion infrastrukturunu izləyir.',
+      ru: 'Освещает континентальные клубные турниры, тактическую аналитику и современные стадионы.',
+    },
+  },
+  'auth-6': {
+    id: 'auth-6',
+    name: 'Leyla Gasimova',
+    location: 'Baku',
+    email: 'l.gasimova@lightnews.az',
+    role: {
+      en: 'Urban Affairs & Society',
+      az: 'Şəhər İnfrastrukturu və Cəmiyyət',
+      ru: 'Городская среда и общество',
+    },
+    beat: {
+      en: 'Public Transit, Education & Civic Tech',
+      az: 'İctimai Nəqliyyat və Təhsil',
+      ru: 'Городской транспорт и образование',
+    },
+    bio: {
+      en: 'Reports on zero-emission urban mobility, civic digitalization, and higher-education fellowships.',
+      az: 'Sıfır emissiyalı şəhər mobilliyi, rəqəmsal dövlət xidmətləri və təhsil proqramlarından yazır.',
+      ru: 'Пишет о городском электротранспорте, цифровых сервисах и образовательных инициативах.',
+    },
+  },
+  'auth-7': {
+    id: 'auth-7',
+    name: 'Marcus Vance',
+    location: 'Frankfurt',
+    email: 'm.vance@lightnews.az',
+    role: {
+      en: 'Cybersecurity & Cloud Architecture',
+      az: 'Kibertəhlükəsizlik və Bulud Memarlığı',
+      ru: 'Кибербезопасность и облачные системы',
+    },
+    beat: {
+      en: 'Zero-Trust & Quantum Networking',
+      az: 'Zero-Trust və Kvant Şəbəkələri',
+      ru: 'Zero-Trust и квантовые сети',
+    },
+    bio: {
+      en: 'Covers post-quantum cryptography, optical backbone security, and resilient cloud architecture.',
+      az: 'Post-kvant kriptoqrafiya, optik şəbəkə təhlükəsizliyi və dayanıqlı bulud sistemlərini araşdırır.',
+      ru: 'Исследует постквантовую криптографию, защиту оптических магистралей и облачную безопасность.',
+    },
+  },
+};
 
 export const INITIAL_ARTICLES: ArticleRecord[] = [
   {
@@ -56,15 +206,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1600,
       height: 900,
     },
-    author: {
-      id: 'auth-1',
-      name: 'Kamran Aliyev',
-      role: {
-        en: 'Chief Diplomatic Correspondent',
-        az: 'Baş Diplomatik Müxbir',
-        ru: 'Шеф-корреспондент отдела политики',
-      },
-    },
+    author: AUTHORS['auth-1'],
     publishedAt: minsAgo(14),
     readTimeMinutes: 4,
     viewsToday: 4820,
@@ -126,15 +268,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1200,
       height: 900,
     },
-    author: {
-      id: 'auth-2',
-      name: 'Nigar Mammadova',
-      role: {
-        en: 'Senior Technology Editor',
-        az: 'Baş Texnologiya Redaktoru',
-        ru: 'Старший редактор отдела технологий',
-      },
-    },
+    author: AUTHORS['auth-2'],
     publishedAt: minsAgo(38),
     readTimeMinutes: 5,
     viewsToday: 3690,
@@ -193,15 +327,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1200,
       height: 900,
     },
-    author: {
-      id: 'auth-3',
-      name: 'David Ross',
-      role: {
-        en: 'Markets & Macroeconomics Desk',
-        az: 'Bazarlar və Makroiqtisadiyyat Şöbəsi',
-        ru: 'Отдел рынков и макроэкономики',
-      },
-    },
+    author: AUTHORS['auth-3'],
     publishedAt: minsAgo(55),
     readTimeMinutes: 4,
     viewsToday: 2980,
@@ -257,15 +383,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1200,
       height: 900,
     },
-    author: {
-      id: 'auth-4',
-      name: 'Elena Lindqvist',
-      role: {
-        en: 'Energy & Climate Desk',
-        az: 'Enerji və İqlim Şöbəsi',
-        ru: 'Отдел энергетики и климата',
-      },
-    },
+    author: AUTHORS['auth-4'],
     publishedAt: hoursAgo(2),
     readTimeMinutes: 3,
     viewsToday: 2140,
@@ -323,15 +441,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1200,
       height: 900,
     },
-    author: {
-      id: 'auth-5',
-      name: 'Rashad Hasanov',
-      role: {
-        en: 'Lead Sports Correspondent',
-        az: 'Baş İdman Müxbiri',
-        ru: 'Ведущий спортивный обозреватель',
-      },
-    },
+    author: AUTHORS['auth-5'],
     publishedAt: hoursAgo(3),
     readTimeMinutes: 3,
     viewsToday: 5410,
@@ -386,15 +496,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1200,
       height: 900,
     },
-    author: {
-      id: 'auth-6',
-      name: 'Leyla Gasimova',
-      role: {
-        en: 'Urban Affairs & Society',
-        az: 'Şəhər İnfrastrukturu və Cəmiyyət',
-        ru: 'Городская среда и общество',
-      },
-    },
+    author: AUTHORS['auth-6'],
     publishedAt: hoursAgo(4),
     readTimeMinutes: 4,
     viewsToday: 1890,
@@ -448,15 +550,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1200,
       height: 900,
     },
-    author: {
-      id: 'auth-7',
-      name: 'Marcus Vance',
-      role: {
-        en: 'Cybersecurity & Cloud Architecture',
-        az: 'Kibertəhlükəsizlik və Bulud Memarlığı',
-        ru: 'Кибербезопасность и облачные системы',
-      },
-    },
+    author: AUTHORS['auth-7'],
     publishedAt: hoursAgo(5),
     readTimeMinutes: 5,
     viewsToday: 2670,
@@ -510,15 +604,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1200,
       height: 900,
     },
-    author: {
-      id: 'auth-1',
-      name: 'Kamran Aliyev',
-      role: {
-        en: 'Chief Diplomatic Correspondent',
-        az: 'Baş Diplomatik Müxbir',
-        ru: 'Шеф-корреспондент отдела политики',
-      },
-    },
+    author: AUTHORS['auth-1'],
     publishedAt: hoursAgo(6),
     readTimeMinutes: 4,
     viewsToday: 1740,
@@ -570,15 +656,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1200,
       height: 900,
     },
-    author: {
-      id: 'auth-3',
-      name: 'David Ross',
-      role: {
-        en: 'Markets & Macroeconomics Desk',
-        az: 'Bazarlar və Makroiqtisadiyyat Şöbəsi',
-        ru: 'Отдел рынков и макроэкономики',
-      },
-    },
+    author: AUTHORS['auth-3'],
     publishedAt: hoursAgo(8),
     readTimeMinutes: 3,
     viewsToday: 1420,
@@ -629,15 +707,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1600,
       height: 900,
     },
-    author: {
-      id: 'auth-4',
-      name: 'Elena Lindqvist',
-      role: {
-        en: 'Energy & Climate Desk',
-        az: 'Enerji və İqlim Şöbəsi',
-        ru: 'Отдел энергетики и климата',
-      },
-    },
+    author: AUTHORS['auth-4'],
     publishedAt: hoursAgo(11),
     readTimeMinutes: 3,
     viewsToday: 1310,
@@ -688,15 +758,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1200,
       height: 900,
     },
-    author: {
-      id: 'auth-6',
-      name: 'Leyla Gasimova',
-      role: {
-        en: 'Urban Affairs & Society',
-        az: 'Şəhər İnfrastrukturu və Cəmiyyət',
-        ru: 'Городская среда и общество',
-      },
-    },
+    author: AUTHORS['auth-6'],
     publishedAt: hoursAgo(14),
     readTimeMinutes: 3,
     viewsToday: 980,
@@ -747,15 +809,7 @@ export const INITIAL_ARTICLES: ArticleRecord[] = [
       width: 1200,
       height: 900,
     },
-    author: {
-      id: 'auth-5',
-      name: 'Rashad Hasanov',
-      role: {
-        en: 'Lead Sports Correspondent',
-        az: 'Baş İdman Müxbiri',
-        ru: 'Ведущий спортивный обозреватель',
-      },
-    },
+    author: AUTHORS['auth-5'],
     publishedAt: hoursAgo(26),
     readTimeMinutes: 3,
     viewsToday: 840,

@@ -55,6 +55,54 @@ export const UI_COPY: Record<
     shareFacebook: string;
     copyLink: string;
     linkCopied: string;
+    listenTitle: string;
+    listenPlay: string;
+    listenPause: string;
+    listenResume: string;
+    listenStop: string;
+    listenSpeed: string;
+    listenUnsupported: string;
+    listenPlaying: string;
+    listenPaused: string;
+    saveForLater: string;
+    savedLabel: string;
+    savedItemsFilter: string;
+    allFeedFilter: string;
+    noSavedTitle: string;
+    noSavedHint: string;
+    moreLikeThisTitle: string;
+    moreLikeThisLoading: string;
+    authorMoreBy: string;
+    authorArticlesCount: string;
+    authorCurrentlyReading: string;
+    authorNoOtherArticles: string;
+    authorClosePanel: string;
+    commentsTitle: string;
+    commentsCount: string;
+    commentsNameLabel: string;
+    commentsNamePlaceholder: string;
+    commentsBodyPlaceholder: string;
+    commentsPostAction: string;
+    commentsPosting: string;
+    commentsReplyAction: string;
+    commentsReplyingTo: string;
+    commentsReplyPlaceholder: string;
+    commentsCancel: string;
+    commentsEmpty: string;
+    commentsLoading: string;
+    commentsErrorEmpty: string;
+    commentsErrorName: string;
+    commentsErrorServer: string;
+    commentsDeleteAction: string;
+    commentsYouBadge: string;
+    commentsSessionNote: string;
+    aiSummarizeButton: string;
+    aiSummarizing: string;
+    aiSummaryTitle: string;
+    aiSummaryHide: string;
+    aiSummaryShow: string;
+    aiSummaryRetry: string;
+    aiSummaryError: string;
   }
 > = {
   en: {
@@ -100,6 +148,54 @@ export const UI_COPY: Record<
     shareFacebook: 'Share on Facebook',
     copyLink: 'Copy link',
     linkCopied: 'Copied',
+    listenTitle: 'Audio Article',
+    listenPlay: 'Listen',
+    listenPause: 'Pause',
+    listenResume: 'Resume',
+    listenStop: 'Stop',
+    listenSpeed: 'Speed',
+    listenUnsupported: 'Text-to-speech is not supported in this browser.',
+    listenPlaying: 'Playing',
+    listenPaused: 'Paused',
+    saveForLater: 'Save for later',
+    savedLabel: 'Saved',
+    savedItemsFilter: 'Saved Items',
+    allFeedFilter: 'All',
+    noSavedTitle: 'No saved articles yet',
+    noSavedHint: 'Click "Save for later" on any article card or reader view to build your reading list.',
+    moreLikeThisTitle: 'More Like This',
+    moreLikeThisLoading: 'Loading related stories...',
+    authorMoreBy: 'Stories by this author',
+    authorArticlesCount: 'Published stories',
+    authorCurrentlyReading: 'Currently reading',
+    authorNoOtherArticles: 'No other published stories from this correspondent yet.',
+    authorClosePanel: 'Close author panel',
+    commentsTitle: 'Discussion',
+    commentsCount: 'comments',
+    commentsNameLabel: 'Display name',
+    commentsNamePlaceholder: 'Your name (e.g. Leyla M.)',
+    commentsBodyPlaceholder: 'Share a thoughtful comment on this story...',
+    commentsPostAction: 'Post comment',
+    commentsPosting: 'Posting...',
+    commentsReplyAction: 'Reply',
+    commentsReplyingTo: 'Replying to',
+    commentsReplyPlaceholder: 'Write a reply...',
+    commentsCancel: 'Cancel',
+    commentsEmpty: 'No comments yet. Be the first to join the discussion.',
+    commentsLoading: 'Loading discussion...',
+    commentsErrorEmpty: 'Please write a comment before posting.',
+    commentsErrorName: 'Please enter a display name (at least 2 characters).',
+    commentsErrorServer: 'Unable to submit comment right now. Please try again.',
+    commentsDeleteAction: 'Delete',
+    commentsYouBadge: 'You',
+    commentsSessionNote: 'Posted with your active reader session',
+    aiSummarizeButton: 'AI Summarize',
+    aiSummarizing: 'Summarizing...',
+    aiSummaryTitle: '3-Point Brief',
+    aiSummaryHide: 'Hide',
+    aiSummaryShow: 'Show brief',
+    aiSummaryRetry: 'Retry',
+    aiSummaryError: 'Unable to generate summary right now. Please try again.',
   },
   az: {
     breakingLabel: 'CANLI',
@@ -144,6 +240,54 @@ export const UI_COPY: Record<
     shareFacebook: 'Facebook-da paylaş',
     copyLink: 'Linki kopyala',
     linkCopied: 'Kopyalandı',
+    listenTitle: 'Səsli Məqalə',
+    listenPlay: 'Dinlə',
+    listenPause: 'Fasilə',
+    listenResume: 'Davam et',
+    listenStop: 'Dayandır',
+    listenSpeed: 'Sürət',
+    listenUnsupported: 'Bu brauzerdə səsli oxuma dəstəklənmir.',
+    listenPlaying: 'Oxunur',
+    listenPaused: 'Fasilədə',
+    saveForLater: 'Sonra oxu',
+    savedLabel: 'Saxlanıldı',
+    savedItemsFilter: 'Saxlanılanlar',
+    allFeedFilter: 'Hamısı',
+    noSavedTitle: 'Hələ saxlanılan xəbər yoxdur',
+    noSavedHint: 'Oxu siyahınızı yaratmaq üçün istənilən məqalədə "Sonra oxu" düyməsini sıxın.',
+    moreLikeThisTitle: 'Oxşar Xəbərlər',
+    moreLikeThisLoading: 'Oxşar xəbərlər yüklənir...',
+    authorMoreBy: 'Müəllifin yazıları',
+    authorArticlesCount: 'Dərc olunmuş yazı',
+    authorCurrentlyReading: 'Hazırda oxunur',
+    authorNoOtherArticles: 'Bu müxbirin hələ başqa dərc olunmuş yazısı yoxdur.',
+    authorClosePanel: 'Müəllif panelini bağla',
+    commentsTitle: 'Müzakirə',
+    commentsCount: 'şərh',
+    commentsNameLabel: 'Görünən ad',
+    commentsNamePlaceholder: 'Adınız (məs. Leyla M.)',
+    commentsBodyPlaceholder: 'Məqalə haqqında fikrinizi bölüşün...',
+    commentsPostAction: 'Şərh yaz',
+    commentsPosting: 'Göndərilir...',
+    commentsReplyAction: 'Cavabla',
+    commentsReplyingTo: 'Cavab:',
+    commentsReplyPlaceholder: 'Cavabınızı yazın...',
+    commentsCancel: 'Ləğv et',
+    commentsEmpty: 'Hələ şərh yoxdur. İlk müzakirəni siz başlayın.',
+    commentsLoading: 'Şərhlər yüklənir...',
+    commentsErrorEmpty: 'Paylaşmazdan əvvəl şərh mətni daxil edin.',
+    commentsErrorName: 'Zəhmət olmasa adınızı daxil edin (ən azı 2 simvol).',
+    commentsErrorServer: 'Hazırda şərh göndərmək mümkün olmadı. Yenidən cəhd edin.',
+    commentsDeleteAction: 'Sil',
+    commentsYouBadge: 'Siz',
+    commentsSessionNote: 'Aktiv oxucu sessiyası ilə təsdiqlənir',
+    aiSummarizeButton: 'AI Xülasə',
+    aiSummarizing: 'Hazırlanır...',
+    aiSummaryTitle: '3 Bəndlik Qısa Xülasə',
+    aiSummaryHide: 'Gizlət',
+    aiSummaryShow: 'Xülasəni göstər',
+    aiSummaryRetry: 'Yenidən yoxla',
+    aiSummaryError: 'Hazırda xülasə hazırlamaq mümkün olmadı. Yenidən cəhd edin.',
   },
   ru: {
     breakingLabel: 'ЭФИР',
@@ -188,5 +332,53 @@ export const UI_COPY: Record<
     shareFacebook: 'Поделиться в Facebook',
     copyLink: 'Копировать ссылку',
     linkCopied: 'Скопировано',
+    listenTitle: 'Аудиоверсия',
+    listenPlay: 'Слушать',
+    listenPause: 'Пауза',
+    listenResume: 'Продолжить',
+    listenStop: 'Стоп',
+    listenSpeed: 'Скорость',
+    listenUnsupported: 'Озвучивание текста не поддерживается в этом браузере.',
+    listenPlaying: 'Воспроизведение',
+    listenPaused: 'Пауза',
+    saveForLater: 'Сохранить',
+    savedLabel: 'Сохранено',
+    savedItemsFilter: 'Сохранённые',
+    allFeedFilter: 'Все',
+    noSavedTitle: 'Нет сохранённых статей',
+    noSavedHint: 'Нажмите «Сохранить» на карточке или внутри статьи, чтобы добавить её в список чтения.',
+    moreLikeThisTitle: 'Похожие материалы',
+    moreLikeThisLoading: 'Подбираем похожие новости...',
+    authorMoreBy: 'Материалы автора',
+    authorArticlesCount: 'Опубликовано статей',
+    authorCurrentlyReading: 'Сейчас читаете',
+    authorNoOtherArticles: 'Других опубликованных статей этого автора пока нет.',
+    authorClosePanel: 'Закрыть панель автора',
+    commentsTitle: 'Обсуждение',
+    commentsCount: 'комментариев',
+    commentsNameLabel: 'Отображаемое имя',
+    commentsNamePlaceholder: 'Ваше имя (напр. Лейла М.)',
+    commentsBodyPlaceholder: 'Поделитесь вашим мнением об этой статье...',
+    commentsPostAction: 'Отправить',
+    commentsPosting: 'Отправка...',
+    commentsReplyAction: 'Ответить',
+    commentsReplyingTo: 'Ответ для',
+    commentsReplyPlaceholder: 'Напишите ответ...',
+    commentsCancel: 'Отмена',
+    commentsEmpty: 'Комментариев пока нет. Начните обсуждение первым.',
+    commentsLoading: 'Загрузка комментариев...',
+    commentsErrorEmpty: 'Пожалуйста, введите текст комментария.',
+    commentsErrorName: 'Укажите имя (минимум 2 символа).',
+    commentsErrorServer: 'Не удалось отправить комментарий. Попробуйте еще раз.',
+    commentsDeleteAction: 'Удалить',
+    commentsYouBadge: 'Вы',
+    commentsSessionNote: 'Отправка подтверждается активной сессией читателя',
+    aiSummarizeButton: 'AI-кратко',
+    aiSummarizing: 'Анализ...',
+    aiSummaryTitle: 'Главное в 3 пунктах',
+    aiSummaryHide: 'Скрыть',
+    aiSummaryShow: 'Показать сводку',
+    aiSummaryRetry: 'Повторить',
+    aiSummaryError: 'Не удалось создать краткую сводку. Попробуйте ещё раз.',
   },
 };

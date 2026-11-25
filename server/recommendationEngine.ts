@@ -1,7 +1,9 @@
+import crypto from 'crypto';
 import { INITIAL_ARTICLES } from '../src/data/articles';
 import {
   AdminArticleInput,
   AdminOverviewMetrics,
+  ArticleComment,
   ArticleRecord,
   ArticleViewModel,
   BreakingTickerItem,
@@ -13,6 +15,16 @@ import {
   TrendingTag,
 } from '../src/types/news';
 import { sanitizeEditorialHtml } from './security';
+
+interface StoredComment {
+  id: string;
+  articleId: string;
+  parentId: string | null;
+  authorName: string;
+  body: string;
+  createdAt: string;
+  sessionIdHash: string;
+}
 
 interface StoredPreferenceVector {
   sessionIdHash: string;
@@ -37,6 +49,7 @@ const VALID_CATEGORIES = new Set<Exclude<CategorySlug, 'all'>>([
 class NewsRepositoryAndRecommender {
   private articles: Map<string, ArticleRecord> = new Map();
   private userProfiles: Map<string, StoredPreferenceVector> = new Map();
+  private comments: Map<string, StoredComment[]> = new Map();
   private siteConfig: SiteConfig = {
     breakingTickerEnabled: true,
     personalizationEnabled: true,
@@ -54,6 +67,45 @@ class NewsRepositoryAndRecommender {
           ru: sanitizeEditorialHtml(article.bodyHtml.ru),
         },
       });
+    }
+
+    const firstId = INITIAL_ARTICLES[0]?.id;
+    const secondId = INITIAL_ARTICLES[1]?.id;
+    const now = Date.now();
+    if (firstId) {
+      this.comments.set(firstId, [
+        {
+          id: 'cmt-seed-1',
+          articleId: firstId,
+          parentId: null,
+          authorName: 'Samira T.',
+          body: 'Clear breakdown of the timeline and infrastructure milestones. Interested to see how cross-border customs harmonization rolls out next quarter.',
+          createdAt: new Date(now - 42 * 60_000).toISOString(),
+          sessionIdHash: 'seed_editorial_reader',
+        },
+        {
+          id: 'cmt-seed-2',
+          articleId: firstId,
+          parentId: 'cmt-seed-1',
+          authorName: 'Orkhan R.',
+          body: 'Agreed—the digital freight corridor benchmarks mentioned in the second half are the real story to watch.',
+          createdAt: new Date(now - 18 * 60_000).toISOString(),
+          sessionIdHash: 'seed_editorial_reader',
+        },
+      ]);
+    }
+    if (secondId) {
+      this.comments.set(secondId, [
+        {
+          id: 'cmt-seed-3',
+          articleId: secondId,
+          parentId: null,
+          authorName: 'Aysel N.',
+          body: 'Thermal efficiency improvements on optical interconnects will make a huge difference for regional data centers.',
+          createdAt: new Date(now - 55 * 60_000).toISOString(),
+          sessionIdHash: 'seed_editorial_reader',
+        },
+      ]);
     }
   }
 
@@ -209,6 +261,10 @@ class NewsRepositoryAndRecommender {
         id: article.author.id,
         name: article.author.name,
         role: article.author.role[lang] || article.author.role.en,
+        bio: article.author.bio[lang] || article.author.bio.en,
+        beat: article.author.beat[lang] || article.author.beat.en,
+        location: article.author.location,
+        email: article.author.email,
       },
       publishedAt: article.publishedAt,
       readTimeMinutes: article.readTimeMinutes,
@@ -326,6 +382,63 @@ class NewsRepositoryAndRecommender {
     return list.slice(0, 8).map((a) => this.toViewModel(a, lang, sessionIdHash));
   }
 
+  public getRelatedArticles(
+    slug: string,
+    lang: Language,
+    sessionIdHash: string,
+    limit = 3
+  ): ArticleViewModel[] {
+    const target = Array.from(this.articles.values()).find((a) => a.slug === slug);
+    if (!target) return [];
+
+    const targetTags = new Set(target.tags.map((t) => t.trim().toLowerCase()));
+    const safeLimit = Math.max(1, Math.min(6, Math.round(limit)));
+
+    const scored = Array.from(this.articles.values())
+      .filter((candidate) => candidate.id !== target.id)
+      .map((candidate) => {
+        const sameCategoryScore = candidate.category === target.category ? 3.5 : 0;
+        const sharedTagsCount = candidate.tags.reduce(
+          (acc, tag) => acc + (targetTags.has(tag.trim().toLowerCase()) ? 1 : 0),
+          0
+        );
+        const freshnessBonus = Math.exp(
+          -0.03 * Math.max(0.1, (Date.now() - new Date(candidate.publishedAt).getTime()) / 3_600_000)
+        );
+        const engagementBonus = Math.log10(Math.max(10, candidate.viewsToday)) * 0.2;
+
+        return {
+          candidate,
+          score: sameCategoryScore + sharedTagsCount * 2.5 + freshnessBonus + engagementBonus,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    return scored
+      .slice(0, safeLimit)
+      .map((entry) => this.toViewModel(entry.candidate, lang, sessionIdHash));
+  }
+
+  public getArticlesByAuthor(
+    authorId: string,
+    lang: Language,
+    sessionIdHash: string
+  ): {
+    author: ArticleViewModel['author'] | null;
+    articles: ArticleViewModel[];
+  } {
+    const cleanId = authorId.trim();
+    const matches = Array.from(this.articles.values())
+      .filter((a) => a.author.id === cleanId)
+      .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+      .map((a) => this.toViewModel(a, lang, sessionIdHash));
+
+    return {
+      author: matches[0]?.author ?? null,
+      articles: matches,
+    };
+  }
+
   public openArticleBySlug(slug: string, lang: Language, sessionIdHash: string): ArticleViewModel | null {
     const article = Array.from(this.articles.values()).find((a) => a.slug === slug);
     if (!article) return null;
@@ -341,6 +454,20 @@ class NewsRepositoryAndRecommender {
     });
 
     return this.toViewModel(article, lang, sessionIdHash);
+  }
+
+  public getArticleForSummary(
+    articleId: string,
+    lang: Language
+  ): { id: string; title: string; excerpt: string; bodyHtml: string } | null {
+    const article = this.articles.get(articleId);
+    if (!article) return null;
+    return {
+      id: article.id,
+      title: article.title[lang] || article.title.en,
+      excerpt: article.excerpt[lang] || article.excerpt.en,
+      bodyHtml: article.bodyHtml[lang] || article.bodyHtml.en,
+    };
   }
 
   public toggleReaction(
@@ -483,15 +610,38 @@ class NewsRepositoryAndRecommender {
         width: 1200,
         height: 900,
       },
-      author: {
-        id: 'auth-admin',
-        name: input.authorName.trim().slice(0, 60) || 'LightNews Desk',
-        role: {
-          en: input.authorRole.trim().slice(0, 60) || 'Editorial Staff',
-          az: input.authorRole.trim().slice(0, 60) || 'Redaksiya Heyəti',
-          ru: input.authorRole.trim().slice(0, 60) || 'Редакция',
-        },
-      },
+      author: (() => {
+        const cleanName = input.authorName.trim().slice(0, 60) || 'LightNews Desk';
+        const existingMatch = Array.from(this.articles.values()).find(
+          (a) => a.author.name.toLowerCase() === cleanName.toLowerCase()
+        );
+        if (existingMatch) {
+          return existingMatch.author;
+        }
+        const cleanRole = input.authorRole.trim().slice(0, 60) || 'Editorial Staff';
+        const slugAuthor =
+          cleanName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'desk';
+        return {
+          id: `auth-${slugAuthor}`,
+          name: cleanName,
+          role: { en: cleanRole, az: cleanRole, ru: cleanRole },
+          beat: {
+            en: 'General Assignment',
+            az: 'Ümumi Xəbərlər',
+            ru: 'Новостная редакция',
+          },
+          bio: {
+            en: 'LightNews staff reporter covering breaking developments and verified dispatches.',
+            az: 'LightNews redaksiyasının operativ xəbər və təhlil müxbiri.',
+            ru: 'Корреспондент редакции LightNews, освещающий оперативные события и аналитику.',
+          },
+          location: 'Baku',
+          email: `${slugAuthor}@lightnews.az`,
+        };
+      })(),
       publishedAt: new Date().toISOString(),
       readTimeMinutes: Math.max(1, Math.min(30, Math.round(input.readTimeMinutes || 3))),
       viewsToday: 1,
@@ -568,7 +718,125 @@ class NewsRepositoryAndRecommender {
   }
 
   public deleteArticle(id: string): boolean {
+    this.comments.delete(id);
     return this.articles.delete(id);
+  }
+
+  private toCommentViewModel(comment: StoredComment, sessionIdHash?: string): ArticleComment {
+    return {
+      id: comment.id,
+      articleId: comment.articleId,
+      parentId: comment.parentId,
+      authorName: comment.authorName,
+      body: comment.body,
+      createdAt: comment.createdAt,
+      isOwn: Boolean(sessionIdHash && comment.sessionIdHash === sessionIdHash),
+    };
+  }
+
+  private sanitizeCommentText(raw: string, maxLen: number): string {
+    return raw
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+      .trim()
+      .slice(0, maxLen);
+  }
+
+  public getComments(articleId: string, sessionIdHash?: string): ArticleComment[] | null {
+    if (!this.articles.has(articleId)) return null;
+    const list = this.comments.get(articleId) ?? [];
+    return list.map((c) => this.toCommentViewModel(c, sessionIdHash));
+  }
+
+  public addComment(
+    articleId: string,
+    input: {
+      authorName: string;
+      body: string;
+      parentId?: string | null;
+      sessionIdHash: string;
+    }
+  ): { comment?: ArticleComment; comments?: ArticleComment[]; error?: string; status?: number } {
+    if (!this.articles.has(articleId)) {
+      return { error: 'Article not found.', status: 404 };
+    }
+
+    const cleanName = this.sanitizeCommentText(input.authorName, 40);
+    const cleanBody = this.sanitizeCommentText(input.body, 1000);
+
+    if (cleanName.length < 2) {
+      return { error: 'Display name must be at least 2 characters.', status: 400 };
+    }
+    if (cleanBody.length < 2) {
+      return { error: 'Comment text must be at least 2 characters.', status: 400 };
+    }
+
+    const existing = this.comments.get(articleId) ?? [];
+    let resolvedParentId: string | null = null;
+    if (typeof input.parentId === 'string' && input.parentId.trim()) {
+      const candidateParentId = input.parentId.trim().slice(0, 64);
+      const parentExists = existing.some((c) => c.id === candidateParentId);
+      if (!parentExists) {
+        return { error: 'Parent comment not found for this article.', status: 400 };
+      }
+      resolvedParentId = candidateParentId;
+    }
+
+    const created: StoredComment = {
+      id: `cmt-${crypto.randomBytes(6).toString('hex')}`,
+      articleId,
+      parentId: resolvedParentId,
+      authorName: cleanName,
+      body: cleanBody,
+      createdAt: new Date().toISOString(),
+      sessionIdHash: input.sessionIdHash,
+    };
+
+    const updatedList = [...existing, created];
+    this.comments.set(articleId, updatedList);
+
+    return {
+      comment: this.toCommentViewModel(created, input.sessionIdHash),
+      comments: updatedList.map((c) => this.toCommentViewModel(c, input.sessionIdHash)),
+    };
+  }
+
+  public deleteComment(
+    articleId: string,
+    commentId: string,
+    sessionIdHash: string
+  ): { deleted?: boolean; comments?: ArticleComment[]; error?: string; status?: number } {
+    if (!this.articles.has(articleId)) {
+      return { error: 'Article not found.', status: 404 };
+    }
+    const existing = this.comments.get(articleId) ?? [];
+    const target = existing.find((c) => c.id === commentId);
+    if (!target) {
+      return { error: 'Comment not found.', status: 404 };
+    }
+    if (target.sessionIdHash !== sessionIdHash) {
+      return { error: 'You can only delete comments posted in your session.', status: 403 };
+    }
+
+    // Collect target comment and all nested descendants
+    const toRemove = new Set<string>([commentId]);
+    let added = true;
+    while (added) {
+      added = false;
+      for (const c of existing) {
+        if (c.parentId && toRemove.has(c.parentId) && !toRemove.has(c.id)) {
+          toRemove.add(c.id);
+          added = true;
+        }
+      }
+    }
+
+    const remaining = existing.filter((c) => !toRemove.has(c.id));
+    this.comments.set(articleId, remaining);
+
+    return {
+      deleted: true,
+      comments: remaining.map((c) => this.toCommentViewModel(c, sessionIdHash)),
+    };
   }
 
   public getAdminOverview(subscriberCount: number): AdminOverviewMetrics {

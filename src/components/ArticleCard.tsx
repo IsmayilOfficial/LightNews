@@ -1,4 +1,4 @@
-import { ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Bookmark, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { CATEGORY_LABELS, UI_COPY } from '../data/i18n';
 import { ArticleViewModel, Language } from '../types/news';
 import { formatCompactNumber, formatNewsTimestamp } from '../utils/formatters';
@@ -7,11 +7,20 @@ import { EditorialImage } from './EditorialImage';
 interface ArticleCardProps {
   article: ArticleViewModel;
   lang: Language;
+  isSaved: boolean;
   onOpenArticle: (slug: string) => void;
   onReact: (articleId: string, reaction: 'like' | 'dislike') => void;
+  onToggleSave: (articleId: string) => void;
 }
 
-export function ArticleCard({ article, lang, onOpenArticle, onReact }: ArticleCardProps) {
+export function ArticleCard({
+  article,
+  lang,
+  isSaved,
+  onOpenArticle,
+  onReact,
+  onToggleSave,
+}: ArticleCardProps) {
   const copy = UI_COPY[lang];
 
   return (
@@ -55,19 +64,19 @@ export function ArticleCard({ article, lang, onOpenArticle, onReact }: ArticleCa
         </div>
       </button>
 
-      {/* Card footer with read time and interactive Like / Dislike counters */}
-      <div className="px-4 py-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-3">
-        <span className="text-xs text-slate-500 dark:text-slate-400 font-mono-tabular">
+      {/* Card footer with read time, Save for Later, and Like / Dislike counters */}
+      <div className="px-4 py-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
+        <span className="text-xs text-slate-500 dark:text-slate-400 font-mono-tabular whitespace-nowrap">
           {article.readTimeMinutes} {copy.minRead}
         </span>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => onReact(article.id, 'like')}
             aria-pressed={article.userReaction === 'like'}
             aria-label={`Like ${article.title}`}
-            className={`inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md text-xs font-medium font-mono-tabular transition-colors cursor-pointer ${
+            className={`inline-flex items-center gap-1 px-2 h-8 rounded-md text-xs font-medium font-mono-tabular transition-colors cursor-pointer ${
               article.userReaction === 'like'
                 ? 'bg-[#0070FF]/12 text-[#0070FF] dark:bg-[#3894FF]/20 dark:text-[#3894FF]'
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200'
@@ -82,7 +91,7 @@ export function ArticleCard({ article, lang, onOpenArticle, onReact }: ArticleCa
             onClick={() => onReact(article.id, 'dislike')}
             aria-pressed={article.userReaction === 'dislike'}
             aria-label={`Dislike ${article.title}`}
-            className={`inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md text-xs font-medium font-mono-tabular transition-colors cursor-pointer ${
+            className={`inline-flex items-center gap-1 px-2 h-8 rounded-md text-xs font-medium font-mono-tabular transition-colors cursor-pointer ${
               article.userReaction === 'dislike'
                 ? 'bg-rose-500/12 text-rose-600 dark:text-rose-400'
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200'
@@ -90,6 +99,22 @@ export function ArticleCard({ article, lang, onOpenArticle, onReact }: ArticleCa
           >
             <ThumbsDown className="w-3.5 h-3.5" />
             <span>{article.dislikes}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onToggleSave(article.id)}
+            aria-pressed={isSaved}
+            aria-label={isSaved ? copy.savedLabel : copy.saveForLater}
+            title={isSaved ? copy.savedLabel : copy.saveForLater}
+            className={`inline-flex items-center gap-1 px-2 h-8 rounded-md text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
+              isSaved
+                ? 'bg-amber-500/15 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300'
+                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-current' : ''}`} aria-hidden="true" />
+            <span>{isSaved ? copy.savedLabel : copy.saveForLater}</span>
           </button>
         </div>
       </div>

@@ -241,3 +241,19 @@ export const reactionApiLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Reaction rate limit exceeded.' },
 });
+
+export const commentApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 25,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Comment rate limit exceeded. Please wait a moment.' },
+});
+
+export const summarizeApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 15,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Summary rate limit exceeded. Please wait a moment.' },
+});

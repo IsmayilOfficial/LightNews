@@ -1,12 +1,14 @@
-import { Layers, Menu, Search, ShieldCheck, X } from 'lucide-react';
+import { Layers, Menu, Moon, Search, ShieldCheck, Sun, X } from 'lucide-react';
 import { useState } from 'react';
 import { CATEGORY_LABELS, UI_COPY } from '../data/i18n';
 import { CategorySlug, Language } from '../types/news';
 
 interface HeaderProps {
   lang: Language;
+  theme: 'light' | 'dark';
   activeCategory: CategorySlug;
   onSelectCategory: (cat: CategorySlug) => void;
+  onToggleTheme: () => void;
   onOpenSearch: () => void;
   onOpenArchitecture: () => void;
   onOpenAdmin: () => void;
@@ -24,8 +26,10 @@ const CATEGORIES: CategorySlug[] = [
 
 export function Header({
   lang,
+  theme,
   activeCategory,
   onSelectCategory,
+  onToggleTheme,
   onOpenSearch,
   onOpenArchitecture,
   onOpenAdmin,
@@ -101,6 +105,21 @@ export function Header({
           >
             <Layers className="w-4 h-4" />
             <span className="hidden xl:inline">{copy.architectureAction}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-pressed={theme === 'dark'}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="inline-flex items-center justify-center w-10 h-10 text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200/80 dark:hover:bg-slate-700 rounded-lg transition-colors duration-150 shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0070FF]"
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400" aria-hidden="true" />
+            ) : (
+              <Moon className="w-4 h-4 text-slate-600" aria-hidden="true" />
+            )}
           </button>
 
           <button

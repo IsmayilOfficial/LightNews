@@ -17,12 +17,15 @@ import {
   verifyAdminBearerToken,
   verifyAdminCredential,
 } from './server/adminAuth';
+import { summarizeArticleWithGemini } from './server/geminiSummarizer';
 import { newsEngine } from './server/recommendationEngine';
 import {
+  commentApiLimiter,
   getOrCreateSession,
   newsApiLimiter,
   reactionApiLimiter,
   requireSameOriginAndCsrf,
+  summarizeApiLimiter,
   telemetryApiLimiter,
 } from './server/security';
 
@@ -130,6 +133,35 @@ async function startServer() {
     res.json({ period, items });
   });
 
+  // Related Stories by Category & Tag Similarity
+  app.get('/api/news/:slug/related', newsApiLimiter, (req, res) => {
+    const { sessionIdHash } = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? '').replace(/[^a-z0-9-]/gi, '').slice(0, 140);
+    const rawLang = String(req.query.lang ?? 'en').toLowerCase() as Language;
+    const lang: Language = VALID_LANGS.has(rawLang) ? rawLang : 'en';
+    const rawLimit = Number(req.query.limit ?? 3);
+    const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(6, Math.round(rawLimit))) : 3;
+
+    const items = newsEngine.getRelatedArticles(slug, lang, sessionIdHash, limit);
+    res.json({ items });
+  });
+
+  // Author Profile & Articles List
+  app.get('/api/authors/:authorId/articles', newsApiLimiter, (req, res) => {
+    const { sessionIdHash } = getOrCreateSession(req, res);
+    const authorId = String(req.params.authorId ?? '').replace(/[^a-z0-9-]/gi, '').slice(0, 80);
+    const rawLang = String(req.query.lang ?? 'en').toLowerCase() as Language;
+    const lang: Language = VALID_LANGS.has(rawLang) ? rawLang : 'en';
+
+    const payload = newsEngine.getArticlesByAuthor(authorId, lang, sessionIdHash);
+    if (!payload.author) {
+      res.status(404).json({ error: 'Author not found' });
+      return;
+    }
+
+    res.json(payload);
+  });
+
   // Single Article Detail + Atomic View Count & Implicit Click Tracking
   app.get('/api/news/:slug', newsApiLimiter, (req, res) => {
     const { sessionIdHash } = getOrCreateSession(req, res);
@@ -206,6 +238,93 @@ async function startServer() {
 
     res.json({ article: updated });
   });
+
+  // Article Comments & Threaded Replies (Authenticated by Reader Session Token + CSRF)
+  app.get('/api/news/:id/comments', newsApiLimiter, (req, res) => {
+    const { sessionIdHash } = getOrCreateSession(req, res);
+    const articleId = String(req.params.id ?? '').replace(/[^a-z0-9-]/gi, '').slice(0, 64);
+
+    const comments = newsEngine.getComments(articleId, sessionIdHash);
+    if (comments === null) {
+      res.status(404).json({ error: 'Article not found' });
+      return;
+    }
+
+    res.json({ comments });
+  });
+
+  app.post('/api/news/:id/comments', commentApiLimiter, requireSameOriginAndCsrf, (req, res) => {
+    const articleId = String(req.params.id ?? '').replace(/[^a-z0-9-]/gi, '').slice(0, 64);
+    const authorName = typeof req.body?.authorName === 'string' ? req.body.authorName : '';
+    const body = typeof req.body?.body === 'string' ? req.body.body : '';
+    const parentId = typeof req.body?.parentId === 'string' ? req.body.parentId : null;
+
+    const result = newsEngine.addComment(articleId, {
+      authorName,
+      body,
+      parentId,
+      sessionIdHash: res.locals.sessionIdHash,
+    });
+
+    if (result.error) {
+      res.status(result.status ?? 400).json({ error: result.error });
+      return;
+    }
+
+    res.status(201).json({ comment: result.comment, comments: result.comments });
+  });
+
+  app.delete(
+    '/api/news/:id/comments/:commentId',
+    commentApiLimiter,
+    requireSameOriginAndCsrf,
+    (req, res) => {
+      const articleId = String(req.params.id ?? '').replace(/[^a-z0-9-]/gi, '').slice(0, 64);
+      const commentId = String(req.params.commentId ?? '').replace(/[^a-z0-9-]/gi, '').slice(0, 64);
+
+      const result = newsEngine.deleteComment(articleId, commentId, res.locals.sessionIdHash);
+      if (result.error) {
+        res.status(result.status ?? 400).json({ error: result.error });
+        return;
+      }
+
+      res.json({ deleted: true, comments: result.comments });
+    }
+  );
+
+  // AI Article 3-Bullet Summarization via Server-Side Gemini API
+  app.post(
+    '/api/news/:id/summarize',
+    summarizeApiLimiter,
+    requireSameOriginAndCsrf,
+    async (req, res) => {
+      const articleId = String(req.params.id ?? '').replace(/[^a-z0-9-]/gi, '').slice(0, 64);
+      const rawLang = String(req.body?.lang ?? 'en').toLowerCase() as Language;
+      const lang: Language = VALID_LANGS.has(rawLang) ? rawLang : 'en';
+
+      const source = newsEngine.getArticleForSummary(articleId, lang);
+      if (!source) {
+        res.status(404).json({ error: 'Article not found' });
+        return;
+      }
+
+      try {
+        const result = await summarizeArticleWithGemini({
+          articleId: source.id,
+          lang,
+          title: source.title,
+          excerpt: source.excerpt,
+          bodyHtml: source.bodyHtml,
+        });
+        res.json(result);
+      } catch (err) {
+        const errObj = err as Error & { status?: number };
+        res
+          .status(errObj.status ?? 502)
+          .json({ error: errObj.message || 'Unable to summarize article right now.' });
+      }
+    }
+  );
 
   // Daily Digest Newsletter Subscription Endpoint (CSRF + Rate-Limited)
   const newsletterSubscribers = new Map<

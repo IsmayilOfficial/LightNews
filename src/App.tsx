@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Bookmark } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdminPanel } from './components/AdminPanel';
 import { ArchitectureBlueprintModal } from './components/ArchitectureBlueprintModal';
 import { ArticleCard } from './components/ArticleCard';
@@ -33,6 +34,18 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState<CategorySlug>('all');
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [savedOnly, setSavedOnly] = useState<boolean>(false);
+  const [savedIds, setSavedIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem('ln_saved_articles');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
   const [mostReadPeriod, setMostReadPeriod] = useState<'today' | 'week'>('today');
 
   const [sessionToken, setSessionToken] = useState<string>('');
@@ -77,6 +90,22 @@ export default function App() {
     }
     window.localStorage.setItem('ln_theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('ln_saved_articles', JSON.stringify(savedIds));
+    } catch {
+      // Ignore storage quota errors gracefully
+    }
+  }, [savedIds]);
+
+  const savedIdSet = useMemo(() => new Set(savedIds), [savedIds]);
+
+  const handleToggleSave = useCallback((articleId: string) => {
+    setSavedIds((prev) =>
+      prev.includes(articleId) ? prev.filter((id) => id !== articleId) : [articleId, ...prev]
+    );
+  }, []);
 
   // Keyboard shortcut Cmd/Ctrl+K for instant search
   useEffect(() => {
@@ -129,7 +158,7 @@ export default function App() {
     try {
       const params = new URLSearchParams({
         lang,
-        category: activeCategory,
+        category: savedOnly ? 'all' : activeCategory,
         sort: 'personalized',
       });
       if (activeTag) params.set('tag', activeTag);
@@ -157,7 +186,7 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [lang, activeCategory, activeTag, searchQuery]);
+  }, [lang, activeCategory, activeTag, searchQuery, savedOnly]);
 
   const fetchMostRead = useCallback(async () => {
     try {
@@ -284,19 +313,26 @@ export default function App() {
   }, [fetchFeed, fetchProfileSnapshot]);
 
   const copy = UI_COPY[lang];
-  const isFiltered = activeCategory !== 'all' || Boolean(activeTag) || Boolean(searchQuery);
-  const heroArticles = !isFiltered ? articles.slice(0, 5) : [];
-  const gridArticles = !isFiltered ? articles.slice(5) : articles;
+  const isFiltered = activeCategory !== 'all' || Boolean(activeTag) || Boolean(searchQuery) || savedOnly;
+  const displayedArticles = useMemo(
+    () => (savedOnly ? articles.filter((a) => savedIdSet.has(a.id)) : articles),
+    [articles, savedOnly, savedIdSet]
+  );
+  const heroArticles = !isFiltered ? displayedArticles.slice(0, 5) : [];
+  const gridArticles = !isFiltered ? displayedArticles.slice(5) : displayedArticles;
 
   return (
     <div id="top" className="min-h-screen flex flex-col bg-[#F8FAFC] dark:bg-[#0B1120] text-[#0F172A] dark:text-[#F1F5F9]">
       <Header
         lang={lang}
+        theme={theme}
         activeCategory={activeCategory}
         onSelectCategory={(cat) => {
           setActiveCategory(cat);
           setActiveTag(null);
+          setSavedOnly(false);
         }}
+        onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
         onOpenSearch={() => setSearchOpen(true)}
         onOpenArchitecture={() => setArchitectureOpen(true)}
         onOpenAdmin={() => {
@@ -341,19 +377,56 @@ export default function App() {
             aria-label={copy.latestFeedTitle}
             className="lg:col-span-8 xl:col-span-9"
           >
-            <div className="flex items-baseline justify-between gap-4 pb-3 mb-5 border-b border-slate-200 dark:border-slate-800">
-              <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                {activeTag
-                  ? `#${activeTag}`
-                  : searchQuery
-                  ? `${copy.searchAction}: "${searchQuery}"`
-                  : activeCategory !== 'all'
-                  ? CATEGORY_LABELS[activeCategory][lang]
-                  : copy.latestFeedTitle}
-              </h2>
-              <span className="text-xs font-mono-tabular text-slate-500 dark:text-slate-400">
-                {articles.length}
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-5 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-baseline gap-2.5">
+                <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                  {savedOnly
+                    ? copy.savedItemsFilter
+                    : activeTag
+                    ? `#${activeTag}`
+                    : searchQuery
+                    ? `${copy.searchAction}: "${searchQuery}"`
+                    : activeCategory !== 'all'
+                    ? CATEGORY_LABELS[activeCategory][lang]
+                    : copy.latestFeedTitle}
+                </h2>
+                <span className="text-xs font-mono-tabular text-slate-500 dark:text-slate-400">
+                  {displayedArticles.length}
+                </span>
+              </div>
+
+              <div
+                role="group"
+                aria-label="Feed filter"
+                className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-lg"
+              >
+                <button
+                  type="button"
+                  onClick={() => setSavedOnly(false)}
+                  aria-pressed={!savedOnly}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                    !savedOnly
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {copy.allFeedFilter}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSavedOnly(true)}
+                  aria-pressed={savedOnly}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                    savedOnly
+                      ? 'bg-[#0070FF] text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Bookmark className={`w-3.5 h-3.5 ${savedOnly ? 'fill-current' : ''}`} aria-hidden="true" />
+                  <span>{copy.savedItemsFilter}</span>
+                  <span className="font-mono-tabular opacity-85">({savedIds.length})</span>
+                </button>
+              </div>
             </div>
 
             {isLoading ? (
@@ -368,10 +441,10 @@ export default function App() {
             ) : gridArticles.length === 0 ? (
               <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-800 rounded-xl p-10 text-center">
                 <p className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1.5">
-                  {copy.noResults}
+                  {savedOnly ? copy.noSavedTitle : copy.noResults}
                 </p>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">
-                  {copy.noResultsHint}
+                  {savedOnly ? copy.noSavedHint : copy.noResultsHint}
                 </p>
                 <button
                   type="button"
@@ -379,6 +452,7 @@ export default function App() {
                     setActiveCategory('all');
                     setActiveTag(null);
                     setSearchQuery('');
+                    setSavedOnly(false);
                   }}
                   className="px-4 py-2 text-sm font-semibold text-white bg-[#0070FF] hover:bg-[#005CE6] rounded-lg cursor-pointer"
                 >
@@ -392,8 +466,10 @@ export default function App() {
                     key={article.id}
                     article={article}
                     lang={lang}
+                    isSaved={savedIdSet.has(article.id)}
                     onOpenArticle={handleOpenArticle}
                     onReact={handleReact}
+                    onToggleSave={handleToggleSave}
                   />
                 ))}
               </div>
@@ -457,8 +533,12 @@ export default function App() {
         lang={lang}
         sessionToken={sessionToken}
         csrfToken={csrfToken}
+        onEnsureSession={ensureSession}
+        isSaved={openArticle ? savedIdSet.has(openArticle.id) : false}
         onClose={handleCloseReader}
         onReact={handleReact}
+        onToggleSave={handleToggleSave}
+        onOpenArticle={handleOpenArticle}
         onSelectTag={(tag) => setActiveTag(tag)}
         onProfileSynced={fetchProfileSnapshot}
       />

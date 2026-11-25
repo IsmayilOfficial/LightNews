@@ -22,12 +22,13 @@ export function useSilentReadingTracker({
   const activeSecondsRef = useRef<number>(0);
 
   useEffect(() => {
-    if (!article || !csrfToken) return;
+    if (!article) return;
 
     milestonesSentRef.current = new Set();
     activeSecondsRef.current = 0;
 
     const dispatchTelemetry = (payload: TelemetryEventPayload) => {
+      if (!csrfToken) return;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'X-CSRF-Token': csrfToken,
@@ -108,5 +109,5 @@ export function useSilentReadingTracker({
         });
       }
     };
-  }, [article?.id, csrfToken]);
+  }, [article?.id, csrfToken, sessionToken]);
 }

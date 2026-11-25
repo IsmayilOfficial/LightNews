@@ -29,6 +29,10 @@ export interface AuthorProfile {
   id: string;
   name: string;
   role: LocalizedText;
+  bio: LocalizedText;
+  beat: LocalizedText;
+  location: string;
+  email: string;
 }
 
 export interface ArticleRecord {
@@ -70,6 +74,10 @@ export interface ArticleViewModel {
     id: string;
     name: string;
     role: string;
+    bio: string;
+    beat: string;
+    location: string;
+    email: string;
   };
   publishedAt: string;
   readTimeMinutes: number;
@@ -169,5 +177,15 @@ export interface AdminArticleInput {
   readTimeMinutes: number;
   isBreaking: boolean;
   isFeatured: boolean;
+}
+
+export interface ArticleComment {
+  id: string;
+  articleId: string;
+  parentId: string | null;
+  authorName: string;
+  body: string;
+  createdAt: string;
+  isOwn: boolean;
 }
 
