@@ -1,0 +1,6 @@
+{
+  "name": "LightNews",
+  "description": "High-performance multilingual digital news portal with silent behavioral personalization, zero-trust security, and full architectural blueprints.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
